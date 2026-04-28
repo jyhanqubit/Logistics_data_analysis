@@ -53,3 +53,21 @@ qubo_path = OUTPUTS / "optimization" / "qubo_solution.csv"
 if qubo_path.exists():
     st.header("QUBO 거점 선택 실험")
     st.dataframe(pd.read_csv(qubo_path).head(10), use_container_width=True)
+
+st.header("Operations (OMS/WMS/TMS) KPI")
+ops_dir = OUTPUTS / "ops_simulation"
+ops_files = {
+    "OMS KPI": ops_dir / "oms_kpi.csv",
+    "WMS KPI": ops_dir / "wms_kpi.csv",
+    "TMS KPI": ops_dir / "tms_kpi.csv",
+}
+if all(path.exists() for path in ops_files.values()):
+    tab_oms, tab_wms, tab_tms = st.tabs(["OMS KPI", "WMS KPI", "TMS KPI"])
+    with tab_oms:
+        st.dataframe(pd.read_csv(ops_files["OMS KPI"]), use_container_width=True)
+    with tab_wms:
+        st.dataframe(pd.read_csv(ops_files["WMS KPI"]), use_container_width=True)
+    with tab_tms:
+        st.dataframe(pd.read_csv(ops_files["TMS KPI"]), use_container_width=True)
+else:
+    st.info("operations KPI 파일이 없습니다. 먼저 `python scripts/run_pipeline.py`를 실행해 outputs/ops_simulation/을 생성하세요.")
