@@ -66,6 +66,7 @@ python scripts/download_public_data.py
 환경변수 설정(`.env`) 예시:
 
 - `DOWNLOAD_PUBLIC_DATA=true`
+- `DOWNLOAD_FORCE_REFRESH=false` (기본값: 기존 raw 파일이 있으면 재다운로드하지 않고 재사용)
 - `SEOUL_OPEN_API_KEY=...`
 - `SEOUL_LOGISTICS_SERVICE_NAME=...` (미설정 시 API 호출 스킵)
 - `SEOUL_DLVR_YMD_START=20180101`

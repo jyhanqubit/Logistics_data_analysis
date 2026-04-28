@@ -107,3 +107,37 @@ def test_download_public_data_date_range_calls_daily(monkeypatch: pytest.MonkeyP
     out = capsys.readouterr().out
     assert "Seoul API progress 1/3" in out
     assert "Seoul API progress 3/3" in out
+
+
+def test_download_public_data_reuses_existing_raw_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seoul_path = tmp_path / "data" / "raw" / "seoul_logistics" / "seoul_logistics_api.csv"
+    postcode_path = tmp_path / "data" / "raw" / "postcode_volume" / "postcode_parcel_volume_api.csv"
+    seoul_path.parent.mkdir(parents=True, exist_ok=True)
+    postcode_path.parent.mkdir(parents=True, exist_ok=True)
+
+    pd.DataFrame(
+        [
+            {
+                "date_key": "2025-01-01",
+                "origin_region_name": "강남구",
+                "dest_region_name": "마포구",
+                "category_name": "생활용품",
+                "parcel_volume": 100,
+            }
+        ]
+    ).to_csv(seoul_path, index=False)
+    pd.DataFrame([{"month_key": "2025-01", "postcode": "06236", "inbound_volume": 1000}]).to_csv(postcode_path, index=False)
+
+    monkeypatch.setenv("DOWNLOAD_FORCE_REFRESH", "false")
+    monkeypatch.setenv("SEOUL_LOGISTICS_SERVICE_NAME", "SVC")
+    monkeypatch.setenv("DATA_GO_KR_POSTCODE_VOLUME_ENDPOINT", "https://example.com/api")
+
+    def fail_fetch(*args, **kwargs):
+        raise AssertionError("API should not be called when existing raw files are reused.")
+
+    monkeypatch.setattr("parcelflow.downloaders.seoul_open_data.SeoulOpenDataClient.fetch_service_rows", fail_fetch)
+    monkeypatch.setattr("parcelflow.downloaders.download_postcode_parcel_volume", fail_fetch)
+
+    outputs = download_public_data(tmp_path)
+    assert outputs["seoul_logistics"] == seoul_path
+    assert outputs["postcode_volume"] == postcode_path
