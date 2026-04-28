@@ -29,6 +29,7 @@ def test_run_ops_simulation_outputs(tmp_path: Path) -> None:
     assert set(out.keys()) == {
         "orders",
         "order_lines",
+        "order_events",
         "inventory_snapshot",
         "pick_pack_events",
         "shipments",

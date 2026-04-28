@@ -34,6 +34,7 @@ def run_ops_simulation(processed_dir: Path, output_dir: Path, seed: int = 42) ->
     files = {
         "orders": output_dir / "orders.csv",
         "order_lines": output_dir / "order_lines.csv",
+        "order_events": output_dir / "order_events.csv",
         "inventory_snapshot": output_dir / "inventory_snapshot.csv",
         "pick_pack_events": output_dir / "pick_pack_events.csv",
         "shipments": output_dir / "shipments.csv",
@@ -45,6 +46,7 @@ def run_ops_simulation(processed_dir: Path, output_dir: Path, seed: int = 42) ->
 
     orders.to_csv(files["orders"], index=False, encoding="utf-8-sig")
     order_lines.to_csv(files["order_lines"], index=False, encoding="utf-8-sig")
+    order_events.to_csv(files["order_events"], index=False, encoding="utf-8-sig")
     inventory.to_csv(files["inventory_snapshot"], index=False, encoding="utf-8-sig")
     pick_pack.to_csv(files["pick_pack_events"], index=False, encoding="utf-8-sig")
     shipments.to_csv(files["shipments"], index=False, encoding="utf-8-sig")

@@ -7,4 +7,5 @@ __all__ = [
     "recommender",
     "optimization",
     "ops_simulation",
+    "advanced_analytics",
 ]

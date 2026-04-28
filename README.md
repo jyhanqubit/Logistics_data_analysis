@@ -72,3 +72,13 @@ pytest -q
 - 공개데이터 기반 End-to-End 물류 분석 파이프라인
 - OMS/WMS/TMS 운영 이해를 KPI/케이스로 구조화
 - 예측·추천·최적화를 하나의 비즈니스 스토리로 연결
+
+## Advanced Analytics Modules
+- Regression
+- Classification
+- Statistical Testing
+- Time Series
+- Clustering
+- Optimization Formulation
+- Extended QUBO
+- RL / DPO / PPO Feasibility
