@@ -1,0 +1,8 @@
+﻿table,row_count
+dim_calendar,210
+dim_region,25
+dim_category,5
+dim_hub_candidate,5
+fact_parcel_od_daily,104704
+fact_postcode_volume_monthly,700
+fact_daily_demand,26250

@@ -1,0 +1,9 @@
+[project]
+name = "parcelflow-ai-poc"
+version = "0.1.0"
+description = "생활물류 수요예측, 추천, 최적화 포트폴리오 PoC"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

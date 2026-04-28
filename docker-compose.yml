@@ -1,0 +1,22 @@
+services:
+  parcelflow:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bash -lc "pip install -r requirements.txt && python scripts/run_pipeline.py"
+
+  # 실제 포트폴리오 확장 시 PostgreSQL/PostGIS로 전환하기 위한 예시입니다.
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: parcelflow
+      POSTGRES_PASSWORD: parcelflow
+      POSTGRES_DB: parcelflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
