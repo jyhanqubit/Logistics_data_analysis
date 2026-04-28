@@ -54,6 +54,39 @@ outputs/
     └── qubo_solution.csv
 ```
 
+
+## API-based data download
+
+수동 CSV 다운로드 없이 아래 스크립트로 원천 데이터를 `data/raw/`에 저장할 수 있습니다.
+
+```bash
+python scripts/download_public_data.py
+```
+
+환경변수 설정(`.env`) 예시:
+
+- `DOWNLOAD_PUBLIC_DATA=true`
+- `DOWNLOAD_FORCE_REFRESH=false` (기본값: 기존 raw 파일이 있으면 재다운로드하지 않고 재사용)
+- `SEOUL_OPEN_API_KEY=...`
+- `SEOUL_LOGISTICS_SERVICE_NAME=...` (미설정 시 API 호출 스킵)
+- `SEOUL_DLVR_YMD_START=20180101`
+- `SEOUL_DLVR_YMD_END=20231231`
+- `SEOUL_PROGRESS_EVERY=10` (진행률 로그 출력 간격, 일 단위)
+- `SEOUL_LOGISTICS_MONTHLY_CSV_URLS=https://...csv,https://...csv` (API service name 확인 전 월별 CSV fallback)
+- `DATA_GO_KR_SERVICE_KEY=...`
+- `DATA_GO_KR_POSTCODE_VOLUME_ENDPOINT=...` (미설정 시 스킵 후 synthetic fallback)
+
+저장 경로:
+
+- 서울 생활물류: `data/raw/seoul_logistics/seoul_logistics_api.csv`
+- 우편번호별 택배물량: `data/raw/postcode_volume/postcode_parcel_volume_api.csv`
+
+`python scripts/run_pipeline.py`는 다음 순서로 데이터 소스를 선택합니다.
+
+1. `USE_REAL_DATA=true` + raw 파일 존재 시 raw 파일 기반 처리
+2. raw 파일 없고 `DOWNLOAD_PUBLIC_DATA=true`면 자동 다운로드 시도
+3. 실패 시 synthetic data fallback
+
 ## 대시보드 실행
 
 ```bash
