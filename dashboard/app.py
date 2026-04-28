@@ -7,6 +7,7 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = ROOT / "outputs"
+DOCS = ROOT / "docs" / "dashboard"
 
 st.set_page_config(page_title="ParcelFlow AI Deep Analytics Dashboard", layout="wide")
 st.title("ParcelFlow AI — Deep Analytics Dashboard")
