@@ -351,7 +351,7 @@ def main() -> None:
 
     prepared = False
     if use_real_data and _raw_files_exist(paths):
-        print("[1/7] USE_REAL_DATA=true and raw files found. Preparing processed dataset from raw files...")
+        print("[1/17] USE_REAL_DATA=true and raw files found. Preparing processed dataset from raw files...")
         prepared = _prepare_processed_from_raw(paths)
         if not prepared:
             print("[INFO] Real-data preparation failed. Synthetic fallback will be used unless download succeeds.")
@@ -364,7 +364,7 @@ def main() -> None:
         )
 
     if not prepared and download_enabled:
-        print("[1/7] Raw files missing or unusable. DOWNLOAD_PUBLIC_DATA=true, attempting API-based download...")
+        print("[1/17] Raw files missing or unusable. DOWNLOAD_PUBLIC_DATA=true, attempting API-based download...")
         download_public_data(paths.root)
         if use_real_data:
             prepared = _prepare_processed_from_raw(paths)
