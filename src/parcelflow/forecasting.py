@@ -6,7 +6,8 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, HistGradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from .db import query_df
@@ -111,48 +112,60 @@ def run_forecasting(db_path: Path, output_dir: Path, model_dir: Path, test_days:
     if train.empty or test.empty:
         raise ValueError("Not enough data for temporal split. Increase generated periods or reduce test_days.")
 
-    model = GradientBoostingRegressor(random_state=42, n_estimators=180, learning_rate=0.05, max_depth=3)
-    model.fit(train[FEATURE_COLUMNS], train["inbound_volume"])
-    pred = model.predict(test[FEATURE_COLUMNS])
-    test["prediction"] = np.maximum(0, pred).round(2)
+    models = {
+        "linear_regression": LinearRegression(),
+        "ridge": Ridge(alpha=1.0),
+        "random_forest": RandomForestRegressor(n_estimators=140, random_state=42),
+        "gradient_boosting": GradientBoostingRegressor(random_state=42, n_estimators=180, learning_rate=0.05, max_depth=3),
+        "hist_gradient_boosting": HistGradientBoostingRegressor(random_state=42),
+    }
+    predictions: dict[str, np.ndarray] = {}
+    for name, model in models.items():
+        model.fit(train[FEATURE_COLUMNS], train["inbound_volume"])
+        predictions[name] = np.maximum(0, model.predict(test[FEATURE_COLUMNS])).round(2)
 
     # Seasonal naive baseline: lag_7
     test["seasonal_naive"] = test["lag_7"].clip(lower=0)
     y_true = test["inbound_volume"].to_numpy()
-    y_pred = test["prediction"].to_numpy()
+    y_pred = predictions["gradient_boosting"]
     y_base = test["seasonal_naive"].to_numpy()
 
-    metrics = pd.DataFrame([
+    metric_rows = [
         {
             "model": "seasonal_naive_lag7",
             "mae": mean_absolute_error(y_true, y_base),
             "rmse": float(np.sqrt(mean_squared_error(y_true, y_base))),
             "wape": _wape(y_true, y_base),
             "smape": _safe_smape(y_true, y_base),
-        },
-        {
-            "model": "gradient_boosting",
-            "mae": mean_absolute_error(y_true, y_pred),
-            "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
-            "wape": _wape(y_true, y_pred),
-            "smape": _safe_smape(y_true, y_pred),
-        },
-    ])
+        }
+    ]
+    for name, pred in predictions.items():
+        metric_rows.append(
+            {
+                "model": name,
+                "mae": mean_absolute_error(y_true, pred),
+                "rmse": float(np.sqrt(mean_squared_error(y_true, pred))),
+                "wape": _wape(y_true, pred),
+                "smape": _safe_smape(y_true, pred),
+            }
+        )
+    metrics = pd.DataFrame(metric_rows)
     metrics[["mae", "rmse", "wape", "smape"]] = metrics[["mae", "rmse", "wape", "smape"]].round(4)
 
-    feature_importance = pd.DataFrame({
-        "feature": FEATURE_COLUMNS,
-        "importance": model.feature_importances_,
-    }).sort_values("importance", ascending=False)
+    gbm = models["gradient_boosting"]
+    feature_importance = pd.DataFrame({"feature": FEATURE_COLUMNS, "importance": gbm.feature_importances_}).sort_values("importance", ascending=False)
 
     pred_cols = [
         "date_key", "dest_region_id", "region_name", "category_id", "category_name",
         "inbound_volume", "prediction", "seasonal_naive"
     ]
+    for name, pred in predictions.items():
+        test[f"pred_{name}"] = pred
+    test["prediction"] = predictions["gradient_boosting"]
     test[pred_cols].to_csv(output_dir / "forecast_predictions.csv", index=False, encoding="utf-8-sig")
     metrics.to_csv(output_dir / "model_metrics.csv", index=False, encoding="utf-8-sig")
     feature_importance.to_csv(output_dir / "feature_importance.csv", index=False, encoding="utf-8-sig")
-    joblib.dump({"model": model, "features": FEATURE_COLUMNS}, model_dir / "demand_forecast_gbr.joblib")
+    joblib.dump({"model": gbm, "features": FEATURE_COLUMNS}, model_dir / "demand_forecast_gbr.joblib")
 
     best = metrics.sort_values("wape").iloc[0]
     gbm = metrics[metrics["model"] == "gradient_boosting"].iloc[0]
