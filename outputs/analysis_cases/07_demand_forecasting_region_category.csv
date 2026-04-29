@@ -1,0 +1,3 @@
+﻿region_name,product_category,model,wape,smape,mae,rmse,peak_season_wape,forecast_risk_level,business_action
+서울권,생활용품,seasonal_naive_lag7,0.0755,0.093,16.2149,21.7176,0.08305,Medium,고오차 구간 예측보정
+서울권,생활용품,gradient_boosting,0.0648,0.0788,13.9292,18.744,0.07128,Medium,고오차 구간 예측보정
