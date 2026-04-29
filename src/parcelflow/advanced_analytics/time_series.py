@@ -5,9 +5,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 try:
+    from statsmodels.tsa.seasonal import STL
     from statsmodels.tsa.arima.model import ARIMA
     from statsmodels.tsa.seasonal import seasonal_decompose
 except Exception:  # optional dependency fallback
+    STL = None
     ARIMA = None
     seasonal_decompose = None
 
@@ -22,9 +24,17 @@ def run_time_series_analysis(feature_df: pd.DataFrame, out_dir: Path, max_lag: i
     ts["date_key"] = pd.to_datetime(ts["date_key"])
     ts["trend"] = ts["observed"].rolling(28, min_periods=2).mean()
     dow_mean = ts.groupby(ts["date_key"].dt.dayofweek)["observed"].transform("mean")
-    ts["seasonal"] = dow_mean
-    ts["residual"] = ts["observed"] - ts["trend"].fillna(0) - ts["seasonal"].fillna(0)
-    if seasonal_decompose is not None:
+    ts["seasonal"] = dow_mean - float(ts["observed"].mean())
+    ts["residual"] = ts["observed"] - ts["trend"].bfill().ffill() - ts["seasonal"]
+    if STL is not None:
+        try:
+            stl = STL(ts.set_index("date_key")["observed"], period=7, robust=True).fit()
+            ts["trend"] = stl.trend.values
+            ts["seasonal"] = stl.seasonal.values
+            ts["residual"] = stl.resid.values
+        except Exception:
+            pass
+    elif seasonal_decompose is not None:
         try:
             dec = seasonal_decompose(ts.set_index("date_key")["observed"], model="additive", period=7, extrapolate_trend="freq")
             ts["trend"] = dec.trend.values
@@ -41,7 +51,9 @@ def run_time_series_analysis(feature_df: pd.DataFrame, out_dir: Path, max_lag: i
 
     rolling = ts[["date_key", "observed"]].copy()
     rolling["rolling_mean_7"] = rolling["observed"].rolling(7, min_periods=2).mean()
+    rolling["rolling_mean_28"] = rolling["observed"].rolling(28, min_periods=4).mean()
     rolling["rolling_std_7"] = rolling["observed"].rolling(7, min_periods=2).std().fillna(0)
+    rolling["rolling_std_28"] = rolling["observed"].rolling(28, min_periods=4).std().fillna(0)
 
     ccf = []
     reg_daily = df.groupby(["date_key", "dest_region_id"], as_index=False)["inbound_volume"].sum()

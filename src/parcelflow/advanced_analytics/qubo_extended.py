@@ -51,14 +51,33 @@ def run_qubo_extended(recommender_df: pd.DataFrame, scm_df: pd.DataFrame, out_di
             if abs(x.sum() - k) > 1:
                 continue
             e = float(x @ Q @ x)
-            solutions.append({"bitstring": "".join(map(str, bits)), "selected_count": int(x.sum()), "energy": e})
+            selected = [cand.iloc[i]["region_name"] for i, b in enumerate(bits) if b == 1]
+            solutions.append(
+                {
+                    "bitstring": "".join(map(str, bits)),
+                    "selected_count": int(x.sum()),
+                    "energy": e,
+                    "selected_candidates": ", ".join(selected),
+                    "is_feasible_select_k": bool(int(x.sum()) == k),
+                }
+            )
     else:
         x = np.zeros(n)
         top = np.argsort(-b)[:k]
         x[top] = 1
-        solutions.append({"bitstring": "".join(map(str, x.astype(int))), "selected_count": int(x.sum()), "energy": float(x @ Q @ x)})
+        selected = [cand.iloc[i]["region_name"] for i, b in enumerate(x.astype(int)) if b == 1]
+        solutions.append(
+            {
+                "bitstring": "".join(map(str, x.astype(int))),
+                "selected_count": int(x.sum()),
+                "energy": float(x @ Q @ x),
+                "selected_candidates": ", ".join(selected),
+                "is_feasible_select_k": bool(int(x.sum()) == k),
+            }
+        )
 
-    sdf = pd.DataFrame(solutions).sort_values("energy").head(10)
+    sdf = pd.DataFrame(solutions).sort_values("energy").head(10).reset_index(drop=True)
+    sdf["rank"] = np.arange(1, len(sdf) + 1)
     evals = np.linalg.eigvals(Q)
     edf = pd.DataFrame({"eigenvalue_index": np.arange(len(evals)), "eigenvalue": evals.real, "abs_eigenvalue": np.abs(evals.real), "sign": np.sign(evals.real)})
 

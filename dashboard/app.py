@@ -183,6 +183,10 @@ with tabs[6]:
     st.subheader("Classification Analysis")
     st.markdown("**Input features**: feature_builder 산출 feature\n\n**Targets**: `peak_demand_risk`, `stockout_risk`, `late_delivery_risk`.")
     st.dataframe(cls_metrics if not cls_metrics.empty else pd.DataFrame({"message": ["classification metrics 없음"]}), use_container_width=True)
+    if not cls_metrics.empty:
+        metric_cols = [c for c in ["accuracy", "precision", "recall", "f1", "roc_auc"] if c in cls_metrics.columns]
+        if metric_cols and (cls_metrics[metric_cols].fillna(0) >= 0.999).all().all():
+            st.warning("분류 성능이 비정상적으로 높습니다. 데이터 누수 가능성을 점검하세요.")
     if not cls_metrics.empty and {"task", "f1"}.issubset(cls_metrics.columns):
         f1_df = cls_metrics.groupby("model", as_index=False)["f1"].mean().sort_values("f1", ascending=False)
         st.altair_chart(alt.Chart(f1_df).mark_bar().encode(x=alt.X("f1:Q", title="F1 score"), y=alt.Y("model:N", sort="-x"), tooltip=["model", "f1"]), use_container_width=True)

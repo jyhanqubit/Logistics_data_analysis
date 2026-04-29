@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import accuracy_score, average_precision_score, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
 
 
 def run_classification_analysis(feature_df: pd.DataFrame, out_dir: Path) -> dict[str, Path]:
@@ -18,7 +18,11 @@ def run_classification_analysis(feature_df: pd.DataFrame, out_dir: Path) -> dict
     df["stockout_risk"] = (df["inbound_volume"] > (df.get("rolling_mean_28", 0) + df.get("rolling_std_14", 0))).astype(int)
     df["late_delivery_risk"] = (df.get("demand_spike_score", 0) > 1.0).astype(int)
 
-    X = df[[c for c in df.columns if np.issubdtype(df[c].dtype, np.number) and c not in {"peak_demand_risk", "stockout_risk", "late_delivery_risk"}]].fillna(0)
+    leakage_cols = {
+        "peak_demand_risk", "stockout_risk", "late_delivery_risk", "risk_level",
+        "stockout_risk_score", "late_delivery_risk_score", "on_time_delivery_rate",
+    }
+    X = df[[c for c in df.columns if np.issubdtype(df[c].dtype, np.number) and c not in leakage_cols]].fillna(0)
     cut = int(len(df) * 0.8)
     X_train, X_test = X.iloc[:cut], X.iloc[cut:]
 
@@ -51,7 +55,7 @@ def run_classification_analysis(feature_df: pd.DataFrame, out_dir: Path) -> dict
                     "recall": recall_score(y_test, pred, zero_division=0),
                     "f1": f1_score(y_test, pred, zero_division=0),
                     "roc_auc": roc_auc_score(y_test, prob) if len(np.unique(y_test)) > 1 else np.nan,
-                    "pr_auc": np.nan,
+                    "pr_auc": average_precision_score(y_test, prob) if len(np.unique(y_test)) > 1 else np.nan,
                     "positive_rate": float(np.mean(pred)),
                 }
             )

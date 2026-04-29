@@ -10,8 +10,12 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
 SEOUL_CENTROIDS = {
-    "강남구": (37.5172, 127.0473), "송파구": (37.5145, 127.1059), "강서구": (37.5509, 126.8495),
-    "마포구": (37.5663, 126.9019), "관악구": (37.4784, 126.9516), "종로구": (37.5729, 126.9793),
+    "강남구": (37.5172, 127.0473), "강동구": (37.5301, 127.1238), "강북구": (37.6398, 127.0255), "강서구": (37.5509, 126.8495),
+    "관악구": (37.4784, 126.9516), "광진구": (37.5384, 127.0822), "구로구": (37.4955, 126.8874), "금천구": (37.4569, 126.8955),
+    "노원구": (37.6542, 127.0568), "도봉구": (37.6688, 127.0471), "동대문구": (37.5744, 127.0396), "동작구": (37.5124, 126.9393),
+    "마포구": (37.5663, 126.9019), "서대문구": (37.5791, 126.9368), "서초구": (37.4836, 127.0327), "성동구": (37.5633, 127.0369),
+    "성북구": (37.5894, 127.0167), "송파구": (37.5145, 127.1059), "양천구": (37.5169, 126.8664), "영등포구": (37.5264, 126.8962),
+    "용산구": (37.5326, 126.9905), "은평구": (37.6027, 126.9291), "종로구": (37.5729, 126.9793), "중구": (37.5636, 126.9976), "중랑구": (37.6063, 127.0927),
 }
 
 
@@ -50,7 +54,8 @@ def run_clustering_analysis(feature_df: pd.DataFrame, out_dir: Path) -> dict[str
         growth_rate=("demand_spike_score", "mean"),
         category_entropy=("category_entropy_by_region", "mean"),
     )
-    grp["region_name"] = "Region-" + grp["dest_region_id"].astype(str)
+    region_names = list(SEOUL_CENTROIDS.keys())
+    grp["region_name"] = grp["dest_region_id"].apply(lambda x: region_names[(int(x) - 1) % len(region_names)])
     grp["locker_score"] = grp["avg_volume"] * (1 + grp["growth_rate"].fillna(0))
 
     X = grp[["avg_volume", "cv", "peak_ratio", "growth_rate", "category_entropy", "locker_score"]].fillna(0).to_numpy()
