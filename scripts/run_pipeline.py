@@ -242,6 +242,26 @@ def _raw_files_exist(paths) -> bool:
     )
 
 
+def _raw_file_status(paths) -> dict[str, bool]:
+    return {
+        "seoul_logistics_api.csv": (paths.data_raw / "seoul_logistics" / "seoul_logistics_api.csv").exists(),
+        "postcode_parcel_volume_api.csv": (paths.data_raw / "postcode_volume" / "postcode_parcel_volume_api.csv").exists(),
+    }
+
+
+def _print_real_data_diagnostics(paths, use_real_data: bool, download_enabled: bool) -> None:
+    status = _raw_file_status(paths)
+    print(
+        "[INFO] Data mode flags:"
+        f" USE_REAL_DATA={use_real_data}, DOWNLOAD_PUBLIC_DATA={download_enabled}"
+    )
+    print(
+        "[INFO] Raw file status:"
+        f" seoul_logistics_api.csv={status['seoul_logistics_api.csv']},"
+        f" postcode_parcel_volume_api.csv={status['postcode_parcel_volume_api.csv']}"
+    )
+
+
 def _prepare_processed_from_raw(paths) -> bool:
     seoul_path = paths.data_raw / "seoul_logistics" / "seoul_logistics_api.csv"
     postcode_path = paths.data_raw / "postcode_volume" / "postcode_parcel_volume_api.csv"
@@ -252,8 +272,12 @@ def _prepare_processed_from_raw(paths) -> bool:
         generate_sample_data(paths.data_processed, start_date="2025-01-01", periods=210, seed=42)
         seoul = pd.read_csv(seoul_path)
         required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
-        if any(col not in seoul.columns for col in required):
-            raise ValueError("Raw Seoul CSV missing normalized columns required for pipeline.")
+        missing_cols = [col for col in required if col not in seoul.columns]
+        if missing_cols:
+            raise ValueError(
+                "Raw Seoul CSV missing normalized columns required for pipeline: "
+                + ", ".join(missing_cols)
+            )
 
         region_map = pd.read_csv(paths.data_processed / "dim_region.csv")[["region_id", "region_name"]]
         category_map = pd.read_csv(paths.data_processed / "dim_category.csv")[["category_id", "category_name"]]
@@ -288,6 +312,14 @@ def _prepare_processed_from_raw(paths) -> bool:
         return True
     except Exception as exc:
         print(f"[WARN] Failed to prepare processed data from raw files: {exc}")
+        print(
+            "[WARN] Expected Seoul columns: "
+            "date_key, origin_region_name, dest_region_name, category_name, parcel_volume"
+        )
+        print(
+            "[WARN] Expected postcode columns (optional but recommended): "
+            "month_key, postcode, inbound_volume"
+        )
         return False
 
 
@@ -297,17 +329,29 @@ def main() -> None:
 
     use_real_data = _env_flag("USE_REAL_DATA", default=False)
     download_enabled = _env_flag("DOWNLOAD_PUBLIC_DATA", default=False)
+    _print_real_data_diagnostics(paths, use_real_data, download_enabled)
 
     prepared = False
     if use_real_data and _raw_files_exist(paths):
-        print("[1/7] USE_REAL_DATA=true and raw files found. Preparing processed dataset from raw files...")
+        print("[1/17] USE_REAL_DATA=true and raw files found. Preparing processed dataset from raw files...")
         prepared = _prepare_processed_from_raw(paths)
+        if not prepared:
+            print("[INFO] Real-data preparation failed. Synthetic fallback will be used unless download succeeds.")
+    elif use_real_data:
+        status = _raw_file_status(paths)
+        missing_files = [name for name, exists in status.items() if not exists]
+        print(
+            "[INFO] USE_REAL_DATA=true but required raw files are missing: "
+            + ", ".join(missing_files)
+        )
 
     if not prepared and download_enabled:
-        print("[1/7] Raw files missing or unusable. DOWNLOAD_PUBLIC_DATA=true, attempting API-based download...")
+        print("[1/17] Raw files missing or unusable. DOWNLOAD_PUBLIC_DATA=true, attempting API-based download...")
         download_public_data(paths.root)
         if use_real_data:
             prepared = _prepare_processed_from_raw(paths)
+            if not prepared:
+                print("[INFO] Download completed but raw-data preparation is still not ready.")
 
     if not prepared:
         print("[1/17] Using synthetic fallback dataset...")
