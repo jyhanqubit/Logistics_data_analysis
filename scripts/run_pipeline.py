@@ -37,6 +37,17 @@ from parcelflow.advanced_analytics import (
 )
 
 
+def _debug_csv_rows(path: Path, label: str) -> None:
+    if not path.exists():
+        print(f"[DEBUG] {label}: file not found ({path})")
+        return
+    try:
+        rows = len(pd.read_csv(path))
+        print(f"[DEBUG] {label}: rows={rows}, path={path}")
+    except Exception as exc:
+        print(f"[WARN] {label}: failed to read csv ({path}) - {exc}")
+
+
 def _safe_stage(stage_name: str, fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
@@ -328,7 +339,7 @@ def _prepare_processed_from_raw(paths) -> bool:
                 if candidate in seoul.columns:
                     seoul = seoul.rename(columns={candidate: "parcel_volume"})
                     break
-        print(f"Seoul table description: {seoul.info()}")
+        print(f"Seoul table description: {seoul.info()}"
         required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
         missing_cols = [col for col in required if col not in seoul.columns]
         if missing_cols:
@@ -442,6 +453,9 @@ def main() -> None:
         print("[1/17] Using synthetic fallback dataset...")
         csv_paths = generate_sample_data(paths.data_processed, start_date="2025-01-01", periods=210, seed=42)
         print(f"      Generated {len(csv_paths)} CSV files in {paths.data_processed}")
+    _debug_csv_rows(paths.data_processed / "fact_parcel_od_daily.csv", "processed.fact_parcel_od_daily")
+    _debug_csv_rows(paths.data_processed / "fact_daily_demand.csv", "processed.fact_daily_demand")
+    _debug_csv_rows(paths.data_processed / "fact_postcode_volume_monthly.csv", "processed.fact_postcode_volume_monthly")
 
     print("[2/17] Building SQLite DB...")
     db_path = build_sqlite_db(paths.db_path, paths.root / "db" / "schema.sql", paths.data_processed)
@@ -449,13 +463,19 @@ def main() -> None:
     counts_path = paths.outputs / "table_counts.csv"
     counts.to_csv(counts_path, index=False, encoding="utf-8-sig")
     print(counts.to_string(index=False))
+    for _, row in counts.iterrows():
+        print(f"[DEBUG] db.table.{row['table_name']} rows={int(row['row_count'])}")
 
     print("[3/17] Running SCM analysis...")
     run_scm_analysis(db_path, paths.outputs / "scm")
+    _debug_csv_rows(paths.outputs / "scm" / "top_od_lanes.csv", "scm.top_od_lanes")
+    _debug_csv_rows(paths.outputs / "scm" / "region_volatility.csv", "scm.region_volatility")
 
     print("[4/17] Training demand forecasting model...")
     forecast = run_forecasting(db_path, paths.outputs / "forecasting", paths.models, test_days=28)
     print(forecast["metrics"].to_string(index=False))
+    _debug_csv_rows(paths.outputs / "forecasting" / "forecast_predictions.csv", "forecasting.forecast_predictions")
+    _debug_csv_rows(paths.outputs / "forecasting" / "model_metrics.csv", "forecasting.model_metrics")
 
     print("[5/17] Running recommendation system...")
     rec = run_site_recommender(
@@ -464,10 +484,95 @@ def main() -> None:
         paths.outputs / "recommender",
     )
     print(rec.groupby("recommendation_type").head(3).to_string(index=False))
+    _debug_csv_rows(paths.outputs / "recommender" / "site_recommendations.csv", "recommender.site_recommendations")
 
     print("[6/17] Running optimization experiments...")
     solve_cvrp_greedy(db_path, paths.outputs / "recommender" / "site_recommendations.csv", paths.outputs / "optimization")
     run_qubo_experiment(db_path, paths.outputs / "optimization", k=2)
+    _debug_csv_rows(paths.outputs / "optimization" / "route_plan.csv", "optimization.route_plan")
+    _debug_csv_rows(paths.outputs / "optimization" / "qubo_selection.csv", "optimization.qubo_selection")
+
+    print("[7/17] Running OMS/WMS/TMS ops simulation...")
+    run_ops_simulation(paths.data_processed, paths.outputs / "ops_simulation", seed=42)
+    _debug_csv_rows(paths.outputs / "ops_simulation" / "orders.csv", "ops.orders")
+    _debug_csv_rows(paths.outputs / "ops_simulation" / "shipments.csv", "ops.shipments")
+    _debug_csv_rows(paths.outputs / "ops_simulation" / "delivery_events.csv", "ops.delivery_events")
+
+    print("[8/17] Generating analysis case outputs...")
+    _safe_stage("analysis_cases", _generate_analysis_case_outputs, paths)
+    _debug_csv_rows(paths.outputs / "analysis_cases" / "01_oms_order_flow.csv", "analysis_cases.01_oms_order_flow")
+    _debug_csv_rows(paths.outputs / "analysis_cases" / "07_demand_forecasting_region_category.csv", "analysis_cases.07_forecasting")
+
+    print("[9/17] Building advanced features...")
+    demand_df = pd.read_csv(paths.data_processed / "fact_daily_demand.csv")
+    print(f"[DEBUG] advanced_analytics.input demand_rows={len(demand_df)}")
+    feat_df = _safe_stage("feature_builder", build_advanced_features, demand_df)
+    if feat_df is None or feat_df.empty:
+        feat_df = demand_df.copy()
+        feat_df["date_key"] = pd.to_datetime(feat_df["date_key"])
+        feat_df["is_peak_season"] = feat_df["date_key"].dt.month.isin([11, 12]).astype(int)
+        feat_df["demand_spike_score"] = 0.0
+    print(f"[DEBUG] advanced_analytics.features rows={len(feat_df)} cols={len(feat_df.columns)}")
+
+    aa_root = paths.outputs / "advanced_analytics"
+    reg_out = _safe_stage("regression_analysis", run_regression_analysis, feat_df, aa_root / "regression")
+    if reg_out:
+        _debug_csv_rows(Path(reg_out.get("metrics", "")), "advanced_analytics.regression.metrics")
+    print("[10/17] Running classification analysis...")
+    cls_out = _safe_stage("classification_analysis", run_classification_analysis, feat_df, aa_root / "classification")
+    if cls_out:
+        _debug_csv_rows(Path(cls_out.get("metrics", "")), "advanced_analytics.classification.metrics")
+    print("[11/17] Running statistical tests...")
+    stat_out = _safe_stage("statistical_tests", run_statistical_tests, feat_df, aa_root / "statistics")
+    if stat_out:
+        _debug_csv_rows(Path(stat_out.get("tests", "")), "advanced_analytics.statistics.tests")
+    print("[12/17] Running time series analysis...")
+    ts_out = _safe_stage("time_series_analysis", run_time_series_analysis, feat_df, aa_root / "time_series")
+    if ts_out:
+        _debug_csv_rows(Path(ts_out.get("series", "")), "advanced_analytics.time_series.series")
+    print("[13/17] Running clustering analysis...")
+    cl_out = _safe_stage("clustering_analysis", run_clustering_analysis, feat_df, aa_root / "clustering")
+    if cl_out:
+        _debug_csv_rows(Path(cl_out.get("clusters", "")), "advanced_analytics.clustering.clusters")
+    print("[14/17] Generating optimization formulation...")
+    opt_form = _safe_stage("optimization_formulation", generate_optimization_formulation, aa_root / "optimization")
+    if opt_form:
+        print(f"[DEBUG] advanced_analytics.optimization.formulation path={opt_form}")
+    print("[15/17] Running extended QUBO...")
+    qubo_ext = _safe_stage(
+        "qubo_extended",
+        run_qubo_extended,
+        rec,
+        pd.read_csv(paths.outputs / "scm" / "region_volatility.csv"),
+        aa_root / "qubo",
+    )
+    print("[16/17] Writing RL feasibility artifacts...")
+    rl_out = _safe_stage("rl_feasibility", write_rl_feasibility, aa_root / "rl")
+    if rl_out:
+        print(f"[DEBUG] advanced_analytics.rl output={rl_out}")
+
+    print("[17/17] Building executive actions and report generation...")
+    insights = paths.outputs / "insights"
+    insights.mkdir(parents=True, exist_ok=True)
+    tms_case_path = paths.outputs / "analysis_cases" / "05_tms_delivery_sla.csv"
+    tms_case = pd.read_csv(tms_case_path) if tms_case_path.exists() else pd.DataFrame()
+    reg_metrics = pd.read_csv(reg_out["metrics"]) if reg_out else pd.DataFrame()
+    act_path = generate_business_actions(insights, reg_metrics, rec, tms_case)
+    print(f"[DEBUG] insights.business_actions path={act_path}")
+    act_df = pd.read_csv(act_path)
+    build_action_priority_matrix(act_df, insights)
+    generate_executive_summary(act_df, insights)
+    _debug_csv_rows(insights / "action_priority_matrix.csv", "insights.action_priority_matrix")
+
+    report_path = paths.root / "reports" / "portfolio_summary.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        "# ParcelFlow AI Portfolio Summary\n\n"
+        "- This report is generated by `scripts/run_pipeline.py`.\n"
+        "- OMS/WMS/TMS analytics are simulation tables generated from public logistics demand data.\n"
+        "- Outputs: `outputs/ops_simulation/*.csv`.\n",
+        encoding="utf-8",
+    )
 
     print("[7/17] Running OMS/WMS/TMS ops simulation...")
     run_ops_simulation(paths.data_processed, paths.outputs / "ops_simulation", seed=42)

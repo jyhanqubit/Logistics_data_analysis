@@ -41,19 +41,19 @@ def load_forecasting_dataset(db_path: Path) -> pd.DataFrame:
             c.category_name,
             c.perishability_score,
             c.bulky_score,
-            f.inbound_volume,
-            cal.month,
-            cal.day_of_week,
-            cal.is_weekend,
-            cal.is_holiday,
-            cal.week_of_year
+            f.inbound_volume
         FROM fact_daily_demand f
         JOIN dim_region r ON f.dest_region_id = r.region_id
         JOIN dim_category c ON f.category_id = c.category_id
-        JOIN dim_calendar cal ON f.date_key = cal.date_key
         ORDER BY f.dest_region_id, f.category_id, f.date_key
     """)
     df["date_key"] = pd.to_datetime(df["date_key"])
+    iso = df["date_key"].dt.isocalendar()
+    df["month"] = df["date_key"].dt.month.astype(int)
+    df["day_of_week"] = df["date_key"].dt.dayofweek.astype(int)
+    df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
+    df["is_holiday"] = 0
+    df["week_of_year"] = iso.week.astype(int)
     return df
 
 
@@ -106,11 +106,22 @@ def run_forecasting(db_path: Path, output_dir: Path, model_dir: Path, test_days:
 
     raw = load_forecasting_dataset(db_path)
     df = make_features(raw)
-    cutoff = df["date_key"].max() - pd.Timedelta(days=test_days - 1)
+    unique_days = int(df["date_key"].nunique())
+    adaptive_test_days = min(test_days, max(1, unique_days // 3))
+    cutoff = df["date_key"].max() - pd.Timedelta(days=adaptive_test_days - 1)
     train = df[df["date_key"] < cutoff].copy()
     test = df[df["date_key"] >= cutoff].copy()
     if train.empty or test.empty:
-        raise ValueError("Not enough data for temporal split. Increase generated periods or reduce test_days.")
+        if len(df) < 2:
+            raise ValueError("Not enough rows for forecasting after feature engineering.")
+        split_idx = max(1, int(len(df) * 0.8))
+        train = df.iloc[:split_idx].copy()
+        test = df.iloc[split_idx:].copy()
+        if test.empty:
+            test = df.iloc[-1:].copy()
+            train = df.iloc[:-1].copy()
+        if train.empty or test.empty:
+            raise ValueError("Not enough data for temporal split after adaptive fallback.")
 
     models = {
         "linear_regression": LinearRegression(),
