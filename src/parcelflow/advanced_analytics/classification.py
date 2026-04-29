@@ -24,7 +24,7 @@ def run_classification_analysis(feature_df: pd.DataFrame, out_dir: Path) -> dict
 
     tasks = ["peak_demand_risk", "stockout_risk", "late_delivery_risk"]
     models = {
-        "LogisticRegression": LogisticRegression(max_iter=300),
+        "LogisticRegression": LogisticRegression(max_iter=2000),
         "RandomForestClassifier": RandomForestClassifier(n_estimators=120, random_state=42),
         "GradientBoostingClassifier": GradientBoostingClassifier(random_state=42),
         "HistGradientBoostingClassifier": HistGradientBoostingClassifier(random_state=42),
