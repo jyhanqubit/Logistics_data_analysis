@@ -28,6 +28,37 @@ def read_md(path: Path, fallback: str) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else fallback
 
 
+def _file_quality_row(path: Path, simulation: bool) -> dict[str, str | int]:
+    if not path.exists():
+        return {
+            "file": str(path.relative_to(ROOT)),
+            "exists": "N",
+            "rows": 0,
+            "updated_utc": "N/A",
+            "simulation": "Y" if simulation else "N",
+        }
+    rows = 0
+    if path.suffix.lower() == ".csv":
+        try:
+            rows = len(pd.read_csv(path))
+        except Exception:
+            rows = -1
+    updated = pd.Timestamp(path.stat().st_mtime, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M:%S UTC")
+    return {
+        "file": str(path.relative_to(ROOT)),
+        "exists": "Y",
+        "rows": int(rows),
+        "updated_utc": updated,
+        "simulation": "Y" if simulation else "N",
+    }
+
+
+def render_data_quality_panel(title: str, paths: list[Path], simulation: bool = True) -> None:
+    rows = [_file_quality_row(p, simulation=simulation) for p in paths]
+    st.caption(f"{title} 데이터 품질/한계 (simulation={'Y' if simulation else 'N'})")
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
 insights_actions = read_csv(OUTPUTS / "insights" / "business_action_recommendations.csv")
 priority = read_csv(OUTPUTS / "insights" / "action_priority_matrix.csv")
 exec_md = read_md(OUTPUTS / "insights" / "executive_summary.md", "executive_summary.md가 없습니다.")
@@ -152,6 +183,14 @@ with tabs[0]:
             use_container_width=True,
         )
     st.markdown("### Data Limitation\n본 대시보드는 공개 생활물류/택배 물동량 데이터를 기반으로 하며, OMS/WMS/TMS 이벤트는 simulation layer입니다. QUBO는 실제 양자 하드웨어 실행 결과가 아니라 classical 검증 결과입니다.")
+    render_data_quality_panel(
+        "Executive",
+        [
+            OUTPUTS / "insights" / "business_action_recommendations.csv",
+            OUTPUTS / "insights" / "action_priority_matrix.csv",
+        ],
+        simulation=True,
+    )
 
 with tabs[1]:
     st.subheader("OMS Dashboard")
@@ -172,6 +211,7 @@ with tabs[1]:
     st.info("**What this means**: delayed_release_rate가 높은 지역은 주문→출고 지시 병목 가능성이 높습니다.")
     st.success("**Recommended Action**: 피크 주간 OMS cut-off를 앞당기고 출고 wave를 증설하세요.")
     st.caption("**Data Caveat**: OMS 이벤트는 공개 물동량 기반 simulation layer입니다.")
+    render_data_quality_panel("OMS", [OUTPUTS / "analysis_cases" / "01_oms_order_flow.csv"], simulation=True)
 
 with tabs[2]:
     st.subheader("WMS Dashboard")
@@ -210,6 +250,14 @@ with tabs[2]:
     st.info("**What this means**: stockout_risk_score 상위 SKU는 피크 주간 품절 위험이 높습니다.")
     st.success("**Recommended Action**: 고위험 SKU 안전재고 20% 상향 + 긴급 reorder 트리거 적용.")
     st.caption("**Data Caveat**: 재고/피킹 지표는 simulation 기반이므로 실제 WMS 제약과 교차검증이 필요합니다.")
+    render_data_quality_panel(
+        "WMS",
+        [
+            OUTPUTS / "analysis_cases" / "03_wms_inventory_risk.csv",
+            OUTPUTS / "analysis_cases" / "04_wms_picking_workload.csv",
+        ],
+        simulation=True,
+    )
 
 with tabs[3]:
     st.subheader("TMS Dashboard")
@@ -238,6 +286,7 @@ with tabs[3]:
     st.info("**What this means**: SLA risk 상위 지역은 배송권역 재조정 및 임시 차량 슬롯 확보가 필요합니다.")
     st.success("**Recommended Action**: 고위험 권역 우선 배차 + 피크 시간 congestion 대응 룰 운영.")
     st.caption("**Data Caveat**: TMS 이벤트는 공개 물동량으로 생성한 simulation layer입니다.")
+    render_data_quality_panel("TMS", [OUTPUTS / "analysis_cases" / "05_tms_delivery_sla.csv"], simulation=True)
 
 with tabs[4]:
     st.subheader("Forecasting & Regression")
@@ -333,11 +382,44 @@ with tabs[8]:
                 data=cluster_assign,
                 get_position="[lon, lat]",
                 get_fill_color="[cluster_id*45 % 255, 120, 255 - cluster_id*35 % 255, 180]",
-                get_radius=120,
+                get_radius=420,
                 pickable=True,
             )
+            area_layer = pdk.Layer(
+                "PolygonLayer",
+                data=[
+                    {
+                        "cluster_id": cid,
+                        "polygon": grp.sort_values(["lat", "lon"])[["lon", "lat"]].values.tolist(),
+                    }
+                    for cid, grp in cluster_assign.groupby("cluster_id")
+                    if len(grp) >= 3
+                ],
+                get_polygon="polygon",
+                get_fill_color="[cluster_id*45 % 255, 120, 255 - cluster_id*35 % 255, 60]",
+                stroked=True,
+                filled=True,
+                extruded=False,
+                pickable=True,
+            )
+            line_layer = pdk.Layer(
+                "LineLayer",
+                data=[
+                    {
+                        "cluster_id": cid,
+                        "source": [float(grp.iloc[i]["lon"]), float(grp.iloc[i]["lat"])],
+                        "target": [float(grp.iloc[i + 1]["lon"]), float(grp.iloc[i + 1]["lat"])],
+                    }
+                    for cid, grp in cluster_assign.groupby("cluster_id")
+                    for i in range(max(0, len(grp) - 1))
+                ],
+                get_source_position="source",
+                get_target_position="target",
+                get_color="[cluster_id*45 % 255, 120, 255 - cluster_id*35 % 255, 190]",
+                get_width=2,
+            )
             view_state = pdk.ViewState(latitude=float(cluster_assign["lat"].mean()), longitude=float(cluster_assign["lon"].mean()), zoom=10)
-            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip={"text": "{region_name} | {cluster_label}"}))
+            st.pydeck_chart(pdk.Deck(layers=[area_layer, line_layer, layer], initial_view_state=view_state, tooltip={"text": "{region_name} | {cluster_label}"}))
         except Exception:
             st.map(cluster_assign.rename(columns={"lat": "latitude", "lon": "longitude"})[["latitude", "longitude"]])
     st.dataframe(cluster_assign.head(30) if not cluster_assign.empty else pd.DataFrame({"message": ["cluster_assignments 없음"]}), use_container_width=True)
@@ -350,6 +432,12 @@ with tabs[9]:
 with tabs[10]:
     st.subheader("Optimization Formulation")
     st.markdown(opt_form)
+    st.markdown(
+        "### 이 수식이 실제로 계산하는 것\n"
+        "1) **CVRP 식**: 차량이 어떤 노드 사이를 이동할지(`x_ijk`)를 선택해 총 이동거리(거리×선택)를 최소화합니다.\n"
+        "2) **Facility Location 식**: 수요 커버 이익에서 거점 고정비 페널티를 빼서 거점 조합 가치를 계산합니다.\n"
+        "3) **QUBO 식**: 위 목적을 0/1 변수 벡터 `x`와 행렬 `Q` 형태(`x^TQx`)로 바꿔 brute force/양자 알고리즘 입력이 가능하게 만듭니다."
+    )
     st.markdown("- $d_{ij}$: 노드 i→j 거리\n- $x_{ijk}$: 차량 k가 i→j 이동하면 1\n- 예시: `route_plan.csv`의 vehicle별 stop 이동이 $x_{ijk}$에 대응")
     st.latex(r"\min \sum_{k \in K} \sum_{i \in V}\sum_{j \in V, j\neq i} d_{ij} x_{ijk}")
     st.latex(r"\min x^TQx")

@@ -180,11 +180,17 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
 
     route = pd.read_csv(paths.outputs / "optimization" / "route_plan.csv")
     case6 = route.copy()
-    case6["baseline_distance_km"] = case6["distance_km"] * 1.15 if "distance_km" in case6.columns else 10
-    case6["optimized_distance_km"] = case6.get("distance_km", 8)
+    distance_col = "route_distance_km" if "route_distance_km" in case6.columns else "distance_km"
+    case6["baseline_distance_km"] = case6[distance_col] * 1.15 if distance_col in case6.columns else 10
+    case6["optimized_distance_km"] = case6.get(distance_col, 8)
     case6["distance_saving_km"] = case6["baseline_distance_km"] - case6["optimized_distance_km"]
     case6["distance_saving_rate"] = case6["distance_saving_km"] / case6["baseline_distance_km"].replace(0, 1)
     case6["business_action"] = "경로 재편으로 이동거리 절감"
+    if "stops" not in case6.columns and {"vehicle_id", "stop_sequence"}.issubset(case6.columns):
+        stop_counts = case6.groupby("vehicle_id")["stop_sequence"].max()
+        case6["stops"] = case6["vehicle_id"].map(stop_counts).fillna(1).astype(int)
+    if "vehicle_utilization" not in case6.columns and {"vehicle_load", "vehicle_capacity"}.issubset(case6.columns):
+        case6["vehicle_utilization"] = (case6["vehicle_load"] / case6["vehicle_capacity"].replace(0, 1)).clip(upper=1.0)
     for col in ["vehicle_id", "stops", "vehicle_load", "vehicle_capacity", "vehicle_utilization"]:
         if col not in case6.columns:
             case6[col] = 1
@@ -377,9 +383,11 @@ def _prepare_processed_from_raw(paths) -> bool:
         seoul["origin_region_name"] = seoul["origin_region_name"].map(_normalize_region)
         seoul["dest_region_name"] = seoul["dest_region_name"].map(_normalize_region)
         valid_categories = category_map["category_name"].dropna().astype(str).tolist()
+        category_remap_rows = 0
         if valid_categories:
             invalid_mask = ~seoul["category_name"].astype(str).isin(valid_categories)
             if invalid_mask.any():
+                category_remap_rows = int(invalid_mask.sum())
                 print(f"[DEBUG] category_name remap required for {int(invalid_mask.sum())} rows.")
                 remap_values = [valid_categories[i % len(valid_categories)] for i in range(int(invalid_mask.sum()))]
                 seoul.loc[invalid_mask, "category_name"] = remap_values
@@ -389,6 +397,7 @@ def _prepare_processed_from_raw(paths) -> bool:
         seoul = seoul.merge(category_map, on="category_name", how="left")
         before_drop = len(seoul)
         seoul = seoul.dropna(subset=["origin_region_id", "dest_region_id", "category_id"])
+        dropped_rows = before_drop - len(seoul)
         print(f"[DEBUG] seoul merge coverage kept={len(seoul)} dropped={before_drop - len(seoul)}")
 
         fact_od = seoul[["date_key", "origin_region_id", "dest_region_id", "category_id", "parcel_volume"]].copy()
@@ -441,6 +450,33 @@ def _prepare_processed_from_raw(paths) -> bool:
             postcode = postcode[["month_key", "postcode", "inbound_volume"]].copy()
             postcode["region_id"] = 1
             postcode.to_csv(paths.data_processed / "fact_postcode_volume_monthly.csv", index=False, encoding="utf-8-sig")
+
+        quality_rows = [
+            {"metric": "raw_rows_input", "value": before_drop},
+            {"metric": "rows_after_mapping", "value": len(seoul)},
+            {"metric": "rows_dropped_mapping_failure", "value": dropped_rows},
+            {"metric": "drop_ratio", "value": round(dropped_rows / before_drop, 6) if before_drop else 0},
+            {"metric": "category_remap_rows", "value": category_remap_rows},
+            {"metric": "category_remap_ratio", "value": round(category_remap_rows / before_drop, 6) if before_drop else 0},
+            {"metric": "fact_daily_unique_dates", "value": int(fact_daily["date_key"].nunique())},
+            {"metric": "fact_daily_min_date", "value": str(fact_daily["date_key"].min())},
+            {"metric": "fact_daily_max_date", "value": str(fact_daily["date_key"].max())},
+        ]
+        quality_df = pd.DataFrame(quality_rows)
+        quality_csv = paths.outputs / "data_quality" / "real_data_preparation_quality.csv"
+        quality_md = paths.outputs / "data_quality" / "real_data_preparation_quality.md"
+        quality_csv.parent.mkdir(parents=True, exist_ok=True)
+        quality_df.to_csv(quality_csv, index=False, encoding="utf-8-sig")
+        quality_md.write_text(
+            "# Real Data Preparation Quality Report\n\n"
+            f"- raw_rows_input: {before_drop}\n"
+            f"- rows_after_mapping: {len(seoul)}\n"
+            f"- rows_dropped_mapping_failure: {dropped_rows}\n"
+            f"- category_remap_rows: {category_remap_rows}\n"
+            f"- date_coverage: {fact_daily['date_key'].min()} ~ {fact_daily['date_key'].max()} "
+            f"(unique_dates={fact_daily['date_key'].nunique()})\n",
+            encoding="utf-8",
+        )
         return True
     except Exception as exc:
         print(f"[WARN] Failed to prepare processed data from raw files: {exc}")
@@ -527,7 +563,7 @@ def main() -> None:
     solve_cvrp_greedy(db_path, paths.outputs / "recommender" / "site_recommendations.csv", paths.outputs / "optimization")
     run_qubo_experiment(db_path, paths.outputs / "optimization", k=2)
     _debug_csv_rows(paths.outputs / "optimization" / "route_plan.csv", "optimization.route_plan")
-    _debug_csv_rows(paths.outputs / "optimization" / "qubo_selection.csv", "optimization.qubo_selection")
+    _debug_csv_rows(paths.outputs / "optimization" / "qubo_solution.csv", "optimization.qubo_solution")
 
     print("[7/15] Running OMS/WMS/TMS ops simulation...")
     run_ops_simulation(paths.data_processed, paths.outputs / "ops_simulation", seed=42)
