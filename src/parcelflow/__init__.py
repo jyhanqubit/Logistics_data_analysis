@@ -6,4 +6,6 @@ __all__ = [
     "forecasting",
     "recommender",
     "optimization",
+    "ops_simulation",
+    "advanced_analytics",
 ]
