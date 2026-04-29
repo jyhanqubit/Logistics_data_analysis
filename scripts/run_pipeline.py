@@ -465,7 +465,7 @@ def main() -> None:
 
     prepared = False
     if use_real_data and _raw_files_exist(paths):
-        print("[1/7] USE_REAL_DATA=true and raw files found. Preparing processed dataset from raw files...")
+        print("[1/15] USE_REAL_DATA=true and raw files found. Preparing processed dataset from raw files...")
         prepared = _prepare_processed_from_raw(paths)
         if not prepared:
             print("[INFO] Real-data preparation failed. Synthetic fallback will be used unless download succeeds.")
@@ -478,7 +478,7 @@ def main() -> None:
         )
 
     if not prepared and download_enabled:
-        print("[1/7] Raw files missing or unusable. DOWNLOAD_PUBLIC_DATA=true, attempting API-based download...")
+        print("[1/15] Raw files missing or unusable. DOWNLOAD_PUBLIC_DATA=true, attempting API-based download...")
         download_public_data(paths.root)
         if use_real_data:
             prepared = _prepare_processed_from_raw(paths)
@@ -486,14 +486,14 @@ def main() -> None:
                 print("[INFO] Download completed but raw-data preparation is still not ready.")
 
     if not prepared:
-        print("[1/17] Using synthetic fallback dataset...")
+        print("[1/15] Using synthetic fallback dataset...")
         csv_paths = generate_sample_data(paths.data_processed, start_date="2025-01-01", periods=210, seed=42)
         print(f"      Generated {len(csv_paths)} CSV files in {paths.data_processed}")
     _debug_csv_rows(paths.data_processed / "fact_parcel_od_daily.csv", "processed.fact_parcel_od_daily")
     _debug_csv_rows(paths.data_processed / "fact_daily_demand.csv", "processed.fact_daily_demand")
     _debug_csv_rows(paths.data_processed / "fact_postcode_volume_monthly.csv", "processed.fact_postcode_volume_monthly")
 
-    print("[2/17] Building SQLite DB...")
+    print("[2/15] Building SQLite DB...")
     db_path = build_sqlite_db(paths.db_path, paths.root / "db" / "schema.sql", paths.data_processed)
     counts = table_counts(db_path)
     counts_path = paths.outputs / "table_counts.csv"
@@ -503,18 +503,18 @@ def main() -> None:
     for _, row in counts.iterrows():
         print(f"[DEBUG] db.table.{row[table_col]} rows={int(row['row_count'])}")
 
-    print("[3/17] Running SCM analysis...")
+    print("[3/15] Running SCM analysis...")
     run_scm_analysis(db_path, paths.outputs / "scm")
     _debug_csv_rows(paths.outputs / "scm" / "top_od_lanes.csv", "scm.top_od_lanes")
     _debug_csv_rows(paths.outputs / "scm" / "region_volatility.csv", "scm.region_volatility")
 
-    print("[4/17] Training demand forecasting model...")
+    print("[4/15] Training demand forecasting model...")
     forecast = run_forecasting(db_path, paths.outputs / "forecasting", paths.models, test_days=28)
     print(forecast["metrics"].to_string(index=False))
     _debug_csv_rows(paths.outputs / "forecasting" / "forecast_predictions.csv", "forecasting.forecast_predictions")
     _debug_csv_rows(paths.outputs / "forecasting" / "model_metrics.csv", "forecasting.model_metrics")
 
-    print("[5/17] Running recommendation system...")
+    print("[5/15] Running recommendation system...")
     rec = run_site_recommender(
         db_path,
         paths.outputs / "forecasting" / "forecast_predictions.csv",
@@ -523,24 +523,24 @@ def main() -> None:
     print(rec.groupby("recommendation_type").head(3).to_string(index=False))
     _debug_csv_rows(paths.outputs / "recommender" / "site_recommendations.csv", "recommender.site_recommendations")
 
-    print("[6/17] Running optimization experiments...")
+    print("[6/15] Running optimization experiments...")
     solve_cvrp_greedy(db_path, paths.outputs / "recommender" / "site_recommendations.csv", paths.outputs / "optimization")
     run_qubo_experiment(db_path, paths.outputs / "optimization", k=2)
     _debug_csv_rows(paths.outputs / "optimization" / "route_plan.csv", "optimization.route_plan")
     _debug_csv_rows(paths.outputs / "optimization" / "qubo_selection.csv", "optimization.qubo_selection")
 
-    print("[7/17] Running OMS/WMS/TMS ops simulation...")
+    print("[7/15] Running OMS/WMS/TMS ops simulation...")
     run_ops_simulation(paths.data_processed, paths.outputs / "ops_simulation", seed=42)
     _debug_csv_rows(paths.outputs / "ops_simulation" / "orders.csv", "ops.orders")
     _debug_csv_rows(paths.outputs / "ops_simulation" / "shipments.csv", "ops.shipments")
     _debug_csv_rows(paths.outputs / "ops_simulation" / "delivery_events.csv", "ops.delivery_events")
 
-    print("[8/17] Generating analysis case outputs...")
+    print("[8/15] Generating analysis case outputs...")
     _safe_stage("analysis_cases", _generate_analysis_case_outputs, paths)
     _debug_csv_rows(paths.outputs / "analysis_cases" / "01_oms_order_flow.csv", "analysis_cases.01_oms_order_flow")
     _debug_csv_rows(paths.outputs / "analysis_cases" / "07_demand_forecasting_region_category.csv", "analysis_cases.07_forecasting")
 
-    print("[9/17] Building advanced features...")
+    print("[9/15] Building advanced features...")
     demand_df = pd.read_csv(paths.data_processed / "fact_daily_demand.csv")
     print(f"[DEBUG] advanced_analytics.input demand_rows={len(demand_df)}")
     feat_df = _safe_stage("feature_builder", build_advanced_features, demand_df)
