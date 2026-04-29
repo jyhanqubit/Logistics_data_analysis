@@ -21,6 +21,7 @@ def run_classification_analysis(feature_df: pd.DataFrame, out_dir: Path) -> dict
     leakage_cols = {
         "peak_demand_risk", "stockout_risk", "late_delivery_risk", "risk_level",
         "stockout_risk_score", "late_delivery_risk_score", "on_time_delivery_rate",
+        "inbound_volume", "rolling_mean_28", "rolling_std_14", "demand_spike_score",
     }
     X = df[[c for c in df.columns if np.issubdtype(df[c].dtype, np.number) and c not in leakage_cols]].fillna(0)
     cut = int(len(df) * 0.8)

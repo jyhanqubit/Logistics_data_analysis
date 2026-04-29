@@ -40,7 +40,14 @@ def _normalize_seoul_logistics(df: pd.DataFrame) -> pd.DataFrame:
             + ". Provide SEOUL_LOGISTICS_SERVICE_NAME or fallback CSV URLs that can map to required columns."
         )
     normalized = renamed[needed].copy()
-    normalized["date_key"] = pd.to_datetime(normalized["date_key"], errors="coerce").dt.strftime("%Y-%m-%d")
+    raw_date = normalized["date_key"].astype(str).str.strip()
+    yyyymmdd_mask = raw_date.str.fullmatch(r"\d{8}")
+    parsed = pd.Series(pd.NaT, index=normalized.index, dtype="datetime64[ns]")
+    if yyyymmdd_mask.any():
+        parsed.loc[yyyymmdd_mask] = pd.to_datetime(raw_date.loc[yyyymmdd_mask], format="%Y%m%d", errors="coerce")
+    if (~yyyymmdd_mask).any():
+        parsed.loc[~yyyymmdd_mask] = pd.to_datetime(raw_date.loc[~yyyymmdd_mask], errors="coerce")
+    normalized["date_key"] = parsed.dt.strftime("%Y-%m-%d")
     normalized["parcel_volume"] = pd.to_numeric(normalized["parcel_volume"], errors="coerce").fillna(0).astype(int)
     return normalized.dropna(subset=["date_key", "origin_region_name", "dest_region_name", "category_name"])
 

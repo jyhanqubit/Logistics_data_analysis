@@ -48,7 +48,7 @@ def run_qubo_extended(recommender_df: pd.DataFrame, scm_df: pd.DataFrame, out_di
     if n <= 20:
         for bits in product([0, 1], repeat=n):
             x = np.array(bits)
-            if abs(x.sum() - k) > 1:
+            if int(x.sum()) != k:
                 continue
             e = float(x @ Q @ x)
             selected = [cand.iloc[i]["region_name"] for i, b in enumerate(bits) if b == 1]
