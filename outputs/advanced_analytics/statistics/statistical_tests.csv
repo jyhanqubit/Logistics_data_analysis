@@ -1,0 +1,2 @@
+﻿test_id,business_question,test_name,group_a,group_b,statistic,p_value,alpha,reject_null,effect_size,interpretation,business_action
+T001,피크 시즌과 비피크 시즌 평균 물동량 차이,Welch t-test,peak,non_peak,,,0.05,False,,유의하면 피크 시즌 운영 분리전략 필요,피크 시즌 안전재고/인력 선증설
