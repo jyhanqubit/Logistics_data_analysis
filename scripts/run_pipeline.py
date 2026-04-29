@@ -278,6 +278,8 @@ def _prepare_processed_from_raw(paths) -> bool:
                 "DLVR_YMD": "date_key",
                 "SNDNG_GU": "origin_region_name",
                 "RCEPT_GU": "dest_region_name",
+                "SEND_GU_NM": "origin_region_name",
+                "RECV_GU_NM": "dest_region_name",
                 "ORIGIN_REGION": "origin_region_name",
                 "DEST_REGION": "dest_region_name",
                 "GOODS_KND": "category_name",
@@ -298,7 +300,6 @@ def _prepare_processed_from_raw(paths) -> bool:
                 "택배물량": "parcel_volume",
             }
         )
-
         if "origin_region_name" not in seoul.columns:
             for candidate in ["sndng_gu_nm", "origin_gu", "from_gu", "origin", "sender_region"]:
                 if candidate in seoul.columns:
@@ -314,6 +315,14 @@ def _prepare_processed_from_raw(paths) -> bool:
                 if candidate in seoul.columns:
                     seoul = seoul.rename(columns={candidate: "category_name"})
                     break
+        if "category_name" not in seoul.columns:
+            lclsf_cols = [col for col in seoul.columns if col.startswith("LCLSF_C_")]
+            if lclsf_cols:
+                lclsf_numeric = seoul[lclsf_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+                if not lclsf_numeric.empty:
+                    top_idx = lclsf_numeric.idxmax(axis=1)
+                    seoul["category_name"] = top_idx.str.replace("LCLSF_C_", "category_", regex=False)
+                    seoul["parcel_volume"] = lclsf_numeric.max(axis=1).astype(int)
         if "parcel_volume" not in seoul.columns:
             for candidate in ["volume_cnt", "parcel_cnt", "qty", "count", "total_volume"]:
                 if candidate in seoul.columns:
@@ -355,7 +364,30 @@ def _prepare_processed_from_raw(paths) -> bool:
         )
         fact_daily.to_csv(paths.data_processed / "fact_daily_demand.csv", index=False, encoding="utf-8-sig")
 
-        postcode = pd.read_csv(postcode_path)
+        try:
+            postcode = pd.read_csv(postcode_path, encoding="cp949")
+        except UnicodeDecodeError:
+            postcode = pd.read_csv(postcode_path)
+        month_map = {
+            "1월": "01",
+            "2월": "02",
+            "3월": "03",
+            "4월": "04",
+            "5월": "05",
+            "6월": "06",
+            "7월": "07",
+            "8월": "08",
+            "9월": "09",
+            "10월": "10",
+            "11월": "11",
+            "12월": "12",
+        }
+        if "우편번호" in postcode.columns and any(m in postcode.columns for m in month_map):
+            melted = postcode.melt(id_vars=["우편번호"], value_vars=[m for m in month_map if m in postcode.columns], var_name="month_label", value_name="inbound_volume")
+            melted["month_key"] = "2025-" + melted["month_label"].map(month_map)
+            melted = melted.rename(columns={"우편번호": "postcode"})
+            postcode = melted[["month_key", "postcode", "inbound_volume"]].copy()
+            postcode["inbound_volume"] = pd.to_numeric(postcode["inbound_volume"], errors="coerce").fillna(0).astype(int)
         if {"month_key", "postcode", "inbound_volume"}.issubset(postcode.columns):
             postcode = postcode[["month_key", "postcode", "inbound_volume"]].copy()
             postcode["region_id"] = 1
