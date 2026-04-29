@@ -120,6 +120,23 @@ def run_scm_analysis(db_path: Path, output_dir: Path) -> dict[str, pd.DataFrame]
     for name, df in outputs.items():
         df.to_csv(output_dir / f"{name}.csv", index=False, encoding="utf-8-sig")
 
+    if region_volatility.empty or top_od_lanes.empty or hub_load.empty:
+        summary = """
+# SCM 분석 요약
+
+## 핵심 발견
+
+- 분석 대상 데이터가 비어 있어 상세 KPI를 계산하지 못했습니다.
+
+## 다음 확인 항목
+
+1. `fact_daily_demand`, `fact_parcel_od_daily`에 적재된 행 수를 확인하세요.
+2. 서울 raw 파일의 지역/카테고리 컬럼이 표준 스키마로 매핑되었는지 확인하세요.
+3. 매핑 후 `dropna`로 제거된 행이 과도한지 확인하세요.
+""".lstrip()
+        (output_dir / "scm_summary.md").write_text(summary, encoding="utf-8")
+        return outputs
+
     top_region = region_volatility.iloc[0]
     top_lane = top_od_lanes.iloc[0]
     highest_util = hub_load.iloc[0]
