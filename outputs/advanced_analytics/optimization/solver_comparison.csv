@@ -1,0 +1,3 @@
+﻿solver,strength,priority
+OR-Tools/Heuristic,CVRP baseline,High
+QUBO brute force,Quantum-ready formulation validation,Medium

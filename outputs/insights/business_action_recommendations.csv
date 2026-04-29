@@ -1,0 +1,4 @@
+﻿action_id,priority,area,business_finding,recommended_action,expected_impact,evidence_metric,evidence_value,risk_level,owner_function,dashboard_section
+A001,High,Forecasting / WMS,피크 시즌 수요 변동이 높음,피크 전 안전재고/피킹 인력 증설,stockout/출고지연 감소,best_wape,0.0242266860461712,High,WMS / Inventory,Executive Impact Summary
+A002,Medium,TMS,일부 지역 SLA 지연 리스크,고위험 지역 우선 배차/차량 증설,정시배송률 개선,mean_late_delivery_risk_score,0.472,Medium,TMS,TMS Dashboard
+A003,Medium,Recommendation,수요밀집 지역의 라스트마일 개선 여지,락커 후보지 우선 설치 검토,배송재시도/거리 감소,recommended_locker_sites,25.0,Low,Network Planning,Recommendation

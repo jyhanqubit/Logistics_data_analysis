@@ -284,8 +284,41 @@ def _prepare_processed_from_raw(paths) -> bool:
                 "CATEGORY": "category_name",
                 "VOLUME": "parcel_volume",
                 "PARCEL_VOLUME": "parcel_volume",
+                "보내는구": "origin_region_name",
+                "보내는_구": "origin_region_name",
+                "출발지": "origin_region_name",
+                "도착구": "dest_region_name",
+                "받는구": "dest_region_name",
+                "받는_구": "dest_region_name",
+                "도착지": "dest_region_name",
+                "상품군": "category_name",
+                "품목": "category_name",
+                "카테고리": "category_name",
+                "물량": "parcel_volume",
+                "택배물량": "parcel_volume",
             }
         )
+
+        if "origin_region_name" not in seoul.columns:
+            for candidate in ["sndng_gu_nm", "origin_gu", "from_gu", "origin", "sender_region"]:
+                if candidate in seoul.columns:
+                    seoul = seoul.rename(columns={candidate: "origin_region_name"})
+                    break
+        if "dest_region_name" not in seoul.columns:
+            for candidate in ["rcept_gu_nm", "dest_gu", "to_gu", "destination", "receiver_region"]:
+                if candidate in seoul.columns:
+                    seoul = seoul.rename(columns={candidate: "dest_region_name"})
+                    break
+        if "category_name" not in seoul.columns:
+            for candidate in ["goods_knd_nm", "goods_kind", "item_category", "product_category"]:
+                if candidate in seoul.columns:
+                    seoul = seoul.rename(columns={candidate: "category_name"})
+                    break
+        if "parcel_volume" not in seoul.columns:
+            for candidate in ["volume_cnt", "parcel_cnt", "qty", "count", "total_volume"]:
+                if candidate in seoul.columns:
+                    seoul = seoul.rename(columns={candidate: "parcel_volume"})
+                    break
         required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
         missing_cols = [col for col in required if col not in seoul.columns]
         if missing_cols:
