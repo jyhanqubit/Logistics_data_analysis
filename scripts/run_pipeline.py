@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 from pathlib import Path
 
 import numpy as np
@@ -350,9 +351,25 @@ def _prepare_processed_from_raw(paths) -> bool:
         seoul["date_key"] = pd.to_datetime(seoul["date_key"], errors="coerce").dt.strftime("%Y-%m-%d")
         seoul["parcel_volume"] = pd.to_numeric(seoul["parcel_volume"], errors="coerce").fillna(0).astype(int)
         seoul = seoul.dropna(subset=["date_key", "origin_region_name", "dest_region_name", "category_name"])
+        seoul["origin_region_name"] = seoul["origin_region_name"].astype(str).str.strip()
+        seoul["dest_region_name"] = seoul["dest_region_name"].astype(str).str.strip()
 
         region_map = pd.read_csv(paths.data_processed / "dim_region.csv")[["region_id", "region_name"]]
         category_map = pd.read_csv(paths.data_processed / "dim_category.csv")[["category_id", "category_name"]]
+        region_name_set = set(region_map["region_name"].astype(str))
+        def _normalize_region(value: str) -> str:
+            value = str(value).strip()
+            if value in region_name_set:
+                return value
+            m = re.search(r"([가-힣]+구)$", value)
+            if m and m.group(1) in region_name_set:
+                return m.group(1)
+            parts = value.split()
+            if parts and parts[-1] in region_name_set:
+                return parts[-1]
+            return value
+        seoul["origin_region_name"] = seoul["origin_region_name"].map(_normalize_region)
+        seoul["dest_region_name"] = seoul["dest_region_name"].map(_normalize_region)
         valid_categories = category_map["category_name"].dropna().astype(str).tolist()
         if valid_categories:
             invalid_mask = ~seoul["category_name"].astype(str).isin(valid_categories)

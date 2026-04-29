@@ -106,22 +106,35 @@ def run_forecasting(db_path: Path, output_dir: Path, model_dir: Path, test_days:
 
     raw = load_forecasting_dataset(db_path)
     df = make_features(raw)
-    unique_days = int(df["date_key"].nunique())
-    adaptive_test_days = min(test_days, max(1, unique_days // 3))
-    cutoff = df["date_key"].max() - pd.Timedelta(days=adaptive_test_days - 1)
-    train = df[df["date_key"] < cutoff].copy()
-    test = df[df["date_key"] >= cutoff].copy()
-    if train.empty or test.empty:
-        if len(df) < 2:
-            raise ValueError("Not enough rows for forecasting after feature engineering.")
-        split_idx = max(1, int(len(df) * 0.8))
-        train = df.iloc[:split_idx].copy()
-        test = df.iloc[split_idx:].copy()
-        if test.empty:
-            test = df.iloc[-1:].copy()
-            train = df.iloc[:-1].copy()
+    if df.empty:
+        raise ValueError("Not enough rows for forecasting after feature engineering.")
+
+    years = df["date_key"].dt.year
+    has_2023 = (years == 2023).any()
+    has_pre_2023 = (years <= 2022).any()
+    if has_2023 and has_pre_2023:
+        train = df[years <= 2022].copy()
+        test = df[years == 2023].copy()
+        print(f"[DEBUG] Forecast split mode=year_based train_rows={len(train)} test_rows={len(test)}")
+    else:
+        print("[DEBUG] Forecast split mode=adaptive_day (year-based split not available)")
+        unique_days = int(df["date_key"].nunique())
+        adaptive_test_days = min(test_days, max(1, unique_days // 3))
+        cutoff = df["date_key"].max() - pd.Timedelta(days=adaptive_test_days - 1)
+        train = df[df["date_key"] < cutoff].copy()
+        test = df[df["date_key"] >= cutoff].copy()
         if train.empty or test.empty:
-            raise ValueError("Not enough data for temporal split after adaptive fallback.")
+            if len(df) < 2:
+                raise ValueError("Not enough rows for forecasting after feature engineering.")
+            split_idx = max(1, int(len(df) * 0.8))
+            train = df.iloc[:split_idx].copy()
+            test = df.iloc[split_idx:].copy()
+            if test.empty:
+                test = df.iloc[-1:].copy()
+                train = df.iloc[:-1].copy()
+            if train.empty or test.empty:
+                raise ValueError("Not enough data for temporal split after adaptive fallback.")
+        print(f"[DEBUG] Forecast split mode=adaptive_day train_rows={len(train)} test_rows={len(test)}")
 
     models = {
         "linear_regression": LinearRegression(),
