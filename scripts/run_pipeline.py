@@ -328,6 +328,7 @@ def _prepare_processed_from_raw(paths) -> bool:
                 if candidate in seoul.columns:
                     seoul = seoul.rename(columns={candidate: "parcel_volume"})
                     break
+        print(f"Seoul table description: {seoul.info()}")
         required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
         missing_cols = [col for col in required if col not in seoul.columns]
         if missing_cols:
@@ -382,6 +383,7 @@ def _prepare_processed_from_raw(paths) -> bool:
             "11월": "11",
             "12월": "12",
         }
+        print(f"Post table description: {postcode.info()}")
         if "우편번호" in postcode.columns and any(m in postcode.columns for m in month_map):
             melted = postcode.melt(id_vars=["우편번호"], value_vars=[m for m in month_map if m in postcode.columns], var_name="month_label", value_name="inbound_volume")
             melted["month_key"] = "2025-" + melted["month_label"].map(month_map)
