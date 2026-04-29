@@ -340,7 +340,6 @@ def _prepare_processed_from_raw(paths) -> bool:
                 if candidate in seoul.columns:
                     seoul = seoul.rename(columns={candidate: "parcel_volume"})
                     break
-        print(f"Seoul table description: {seoul.info()}")
         required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
         missing_cols = [col for col in required if col not in seoul.columns]
         if missing_cols:
@@ -348,7 +347,14 @@ def _prepare_processed_from_raw(paths) -> bool:
                 "Raw Seoul CSV missing normalized columns required for pipeline: "
                 + ", ".join(missing_cols)
             )
-        seoul["date_key"] = pd.to_datetime(seoul["date_key"], errors="coerce").dt.strftime("%Y-%m-%d")
+        raw_date = seoul["date_key"].astype(str).str.strip()
+        yyyymmdd_mask = raw_date.str.fullmatch(r"\d{8}")
+        parsed_date = pd.Series(pd.NaT, index=seoul.index, dtype="datetime64[ns]")
+        if yyyymmdd_mask.any():
+            parsed_date.loc[yyyymmdd_mask] = pd.to_datetime(raw_date.loc[yyyymmdd_mask], format="%Y%m%d", errors="coerce")
+        if (~yyyymmdd_mask).any():
+            parsed_date.loc[~yyyymmdd_mask] = pd.to_datetime(raw_date.loc[~yyyymmdd_mask], errors="coerce")
+        seoul["date_key"] = parsed_date.dt.strftime("%Y-%m-%d")
         seoul["parcel_volume"] = pd.to_numeric(seoul["parcel_volume"], errors="coerce").fillna(0).astype(int)
         seoul = seoul.dropna(subset=["date_key", "origin_region_name", "dest_region_name", "category_name"])
         seoul["origin_region_name"] = seoul["origin_region_name"].astype(str).str.strip()
@@ -401,6 +407,11 @@ def _prepare_processed_from_raw(paths) -> bool:
             .rename(columns={"parcel_volume": "inbound_volume"})
         )
         fact_daily.to_csv(paths.data_processed / "fact_daily_demand.csv", index=False, encoding="utf-8-sig")
+        print(
+            "[DEBUG] fact_daily_demand date range: "
+            f"{fact_daily['date_key'].min()} ~ {fact_daily['date_key'].max()} "
+            f"(unique_dates={fact_daily['date_key'].nunique()})"
+        )
 
         try:
             postcode = pd.read_csv(postcode_path, encoding="cp949")
@@ -420,7 +431,6 @@ def _prepare_processed_from_raw(paths) -> bool:
             "11월": "11",
             "12월": "12",
         }
-        print(f"Post table description: {postcode.info()}")
         if "우편번호" in postcode.columns and any(m in postcode.columns for m in month_map):
             melted = postcode.melt(id_vars=["우편번호"], value_vars=[m for m in month_map if m in postcode.columns], var_name="month_label", value_name="inbound_volume")
             melted["month_key"] = "2025-" + melted["month_label"].map(month_map)
