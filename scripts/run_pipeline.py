@@ -271,6 +271,21 @@ def _prepare_processed_from_raw(paths) -> bool:
     try:
         generate_sample_data(paths.data_processed, start_date="2025-01-01", periods=210, seed=42)
         seoul = pd.read_csv(seoul_path)
+        seoul = seoul.rename(
+            columns={
+                "STD_YMD": "date_key",
+                "DELIVRY_YMD": "date_key",
+                "DLVR_YMD": "date_key",
+                "SNDNG_GU": "origin_region_name",
+                "RCEPT_GU": "dest_region_name",
+                "ORIGIN_REGION": "origin_region_name",
+                "DEST_REGION": "dest_region_name",
+                "GOODS_KND": "category_name",
+                "CATEGORY": "category_name",
+                "VOLUME": "parcel_volume",
+                "PARCEL_VOLUME": "parcel_volume",
+            }
+        )
         required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
         missing_cols = [col for col in required if col not in seoul.columns]
         if missing_cols:
@@ -278,6 +293,9 @@ def _prepare_processed_from_raw(paths) -> bool:
                 "Raw Seoul CSV missing normalized columns required for pipeline: "
                 + ", ".join(missing_cols)
             )
+        seoul["date_key"] = pd.to_datetime(seoul["date_key"], errors="coerce").dt.strftime("%Y-%m-%d")
+        seoul["parcel_volume"] = pd.to_numeric(seoul["parcel_volume"], errors="coerce").fillna(0).astype(int)
+        seoul = seoul.dropna(subset=["date_key", "origin_region_name", "dest_region_name", "category_name"])
 
         region_map = pd.read_csv(paths.data_processed / "dim_region.csv")[["region_id", "region_name"]]
         category_map = pd.read_csv(paths.data_processed / "dim_category.csv")[["category_id", "category_name"]]
