@@ -291,67 +291,6 @@ def _prepare_processed_from_raw(paths) -> bool:
         return False
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name, str(default)).strip().lower()
-    return raw in {"1", "true", "yes", "y", "on"}
-
-
-def _raw_files_exist(paths) -> bool:
-    return (
-        (paths.data_raw / "seoul_logistics" / "seoul_logistics_api.csv").exists()
-        and (paths.data_raw / "postcode_volume" / "postcode_parcel_volume_api.csv").exists()
-    )
-
-
-def _prepare_processed_from_raw(paths) -> bool:
-    seoul_path = paths.data_raw / "seoul_logistics" / "seoul_logistics_api.csv"
-    postcode_path = paths.data_raw / "postcode_volume" / "postcode_parcel_volume_api.csv"
-    if not (seoul_path.exists() and postcode_path.exists()):
-        return False
-
-    try:
-        generate_sample_data(paths.data_processed, start_date="2025-01-01", periods=210, seed=42)
-        seoul = pd.read_csv(seoul_path)
-        required = ["date_key", "origin_region_name", "dest_region_name", "category_name", "parcel_volume"]
-        if any(col not in seoul.columns for col in required):
-            raise ValueError("Raw Seoul CSV missing normalized columns required for pipeline.")
-
-        region_map = pd.read_csv(paths.data_processed / "dim_region.csv")[["region_id", "region_name"]]
-        category_map = pd.read_csv(paths.data_processed / "dim_category.csv")[["category_id", "category_name"]]
-
-        seoul = seoul.merge(region_map.rename(columns={"region_name": "origin_region_name", "region_id": "origin_region_id"}), on="origin_region_name", how="left")
-        seoul = seoul.merge(region_map.rename(columns={"region_name": "dest_region_name", "region_id": "dest_region_id"}), on="dest_region_name", how="left")
-        seoul = seoul.merge(category_map, on="category_name", how="left")
-        seoul = seoul.dropna(subset=["origin_region_id", "dest_region_id", "category_id"])
-
-        fact_od = seoul[["date_key", "origin_region_id", "dest_region_id", "category_id", "parcel_volume"]].copy()
-        fact_od["origin_region_id"] = fact_od["origin_region_id"].astype(int)
-        fact_od["dest_region_id"] = fact_od["dest_region_id"].astype(int)
-        fact_od["category_id"] = fact_od["category_id"].astype(int)
-        fact_od["parcel_volume"] = pd.to_numeric(fact_od["parcel_volume"], errors="coerce").fillna(0).astype(int)
-        fact_od["avg_distance_km"] = 8.0
-        fact_od["promised_sla_hours"] = 24.0
-        fact_od["simulated_delay_rate"] = 0.03
-        fact_od.to_csv(paths.data_processed / "fact_parcel_od_daily.csv", index=False, encoding="utf-8-sig")
-
-        fact_daily = (
-            fact_od.groupby(["date_key", "dest_region_id", "category_id"], as_index=False)["parcel_volume"]
-            .sum()
-            .rename(columns={"parcel_volume": "inbound_volume"})
-        )
-        fact_daily.to_csv(paths.data_processed / "fact_daily_demand.csv", index=False, encoding="utf-8-sig")
-
-        postcode = pd.read_csv(postcode_path)
-        if {"month_key", "postcode", "inbound_volume"}.issubset(postcode.columns):
-            postcode = postcode[["month_key", "postcode", "inbound_volume"]].copy()
-            postcode["region_id"] = 1
-            postcode.to_csv(paths.data_processed / "fact_postcode_volume_monthly.csv", index=False, encoding="utf-8-sig")
-        return True
-    except Exception as exc:
-        print(f"[WARN] Failed to prepare processed data from raw files: {exc}")
-        return False
-
-
 def main() -> None:
     paths = get_paths(ROOT)
     ensure_dirs(paths)

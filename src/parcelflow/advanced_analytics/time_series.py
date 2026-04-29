@@ -4,6 +4,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    from statsmodels.tsa.seasonal import seasonal_decompose
+except Exception:  # optional dependency fallback
+    ARIMA = None
+    seasonal_decompose = None
 
 
 def run_time_series_analysis(feature_df: pd.DataFrame, out_dir: Path, max_lag: int = 28) -> dict[str, Path]:
@@ -18,6 +24,14 @@ def run_time_series_analysis(feature_df: pd.DataFrame, out_dir: Path, max_lag: i
     dow_mean = ts.groupby(ts["date_key"].dt.dayofweek)["observed"].transform("mean")
     ts["seasonal"] = dow_mean
     ts["residual"] = ts["observed"] - ts["trend"].fillna(0) - ts["seasonal"].fillna(0)
+    if seasonal_decompose is not None:
+        try:
+            dec = seasonal_decompose(ts.set_index("date_key")["observed"], model="additive", period=7, extrapolate_trend="freq")
+            ts["trend"] = dec.trend.values
+            ts["seasonal"] = dec.seasonal.values
+            ts["residual"] = dec.resid.values
+        except Exception:
+            pass
 
     rows = []
     s = ts["observed"].fillna(0)
@@ -38,6 +52,15 @@ def run_time_series_analysis(feature_df: pd.DataFrame, out_dir: Path, max_lag: i
             a, b = pivot[cols[i]], pivot[cols[j]]
             corr = a.corr(b)
             ccf.append({"series_a": str(cols[i]), "series_b": str(cols[j]), "lag": 0, "correlation": corr, "abs_correlation": abs(corr), "interpretation": "동행상관"})
+
+    if ARIMA is not None:
+        try:
+            arima = ARIMA(ts["observed"].astype(float), order=(1, 1, 1)).fit()
+            ts["arima_fitted"] = arima.predict(start=1, end=len(ts))
+        except Exception:
+            ts["arima_fitted"] = np.nan
+    else:
+        ts["arima_fitted"] = np.nan
 
     decomp_path = out_dir / "decomposition.csv"
     acf_path = out_dir / "acf_pacf.csv"
