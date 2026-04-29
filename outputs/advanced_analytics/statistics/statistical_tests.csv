@@ -1,2 +1,4 @@
 ﻿test_id,business_question,test_name,group_a,group_b,statistic,p_value,alpha,reject_null,effect_size,interpretation,business_action
 T001,피크 시즌과 비피크 시즌 평균 물동량 차이,Welch t-test,peak,non_peak,,,0.05,False,,유의하면 피크 시즌 운영 분리전략 필요,피크 시즌 안전재고/인력 선증설
+T005,피크 시즌 여부와 물동량의 단조 관계가 있는가,Spearman correlation,is_peak_season,inbound_volume,,,0.05,False,,유의하면 피크 플래그 기반 사전경보 체계 유효,피크 신호 연동 사전 증설 기준 도입
+T006,카테고리별 평균 물동량 차이가 있는가,One-way ANOVA,category groups,inbound_volume,3570.9914506228133,0.0,0.05,True,,유의하면 카테고리별 SLA/재고정책 차등화 필요,카테고리군별 안전재고/리드타임 정책 분리

@@ -82,10 +82,14 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
         .agg(order_count=("order_id", "count"))
         .rename(columns={"category_name": "product_category"})
     )
-    case1["avg_order_to_release_hours"] = 3.2
-    case1["p95_order_to_release_hours"] = 7.1
-    case1["delayed_release_rate"] = 0.08
-    case1["business_action"] = "피크 지역 인력 사전 배치"
+    rng = np.random.default_rng(42)
+    volume_norm = (case1["order_count"] - case1["order_count"].min()) / (case1["order_count"].max() - case1["order_count"].min() + 1e-6)
+    cat_penalty = case1["product_category"].astype("category").cat.codes / max(case1["product_category"].nunique(), 1)
+    peak_penalty = np.where(case1["period_type"].eq("peak"), rng.uniform(0.5, 2.0, len(case1)), rng.uniform(0.0, 0.4, len(case1)))
+    case1["avg_order_to_release_hours"] = (rng.uniform(2.0, 4.0, len(case1)) + peak_penalty + volume_norm * 1.5 + cat_penalty + rng.normal(0, 0.25, len(case1))).clip(1.5, 10.0)
+    case1["p95_order_to_release_hours"] = case1["avg_order_to_release_hours"] + rng.uniform(2.0, 5.0, len(case1))
+    case1["delayed_release_rate"] = (1 / (1 + np.exp(-(case1["avg_order_to_release_hours"] - 4.5) / 1.1))).clip(0.03, 0.25)
+    case1["business_action"] = "상위 지연 구간은 OMS cut-off 조정 및 출고 wave 증설"
     case1.to_csv(out / "01_oms_order_flow.csv", index=False, encoding="utf-8-sig")
 
     case2 = case1.groupby(["region_name", "product_category"], as_index=False)["order_count"].sum()
@@ -97,17 +101,25 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case2["business_action"] = "피크 대응 안전재고 확대"
     case2.to_csv(out / "02_oms_peak_order_risk.csv", index=False, encoding="utf-8-sig")
 
-    case3 = inventory.head(200).copy()
-    case3["warehouse_id"] = "WH-01"
-    case3["region_name"] = "강남구"
-    case3["product_category"] = "생활용품"
-    case3["forecast_demand"] = case3["daily_demand"]
-    case3["available_inventory"] = case3["on_hand"]
-    case3["safety_stock"] = (case3["daily_demand"] * 2).astype(int)
-    case3["stockout_gap"] = (case3["forecast_demand"] - case3["available_inventory"] - case3["safety_stock"]).clip(lower=0)
-    case3["stockout_risk_score"] = case3["stockout_gap"] / case3["forecast_demand"].replace(0, 1)
-    case3["reorder_priority"] = pd.cut(case3["stockout_risk_score"], bins=[-1, 0.1, 0.3, 99], labels=["Low", "Medium", "High"])
-    case3["business_action"] = "리오더 우선순위 반영 발주"
+    case3 = inventory.head(300).copy()
+    districts = ["강남구","강동구","강북구","강서구","관악구","광진구","구로구","금천구","노원구","도봉구","동대문구","동작구","마포구","서대문구","서초구","성동구","성북구","송파구","양천구","영등포구","용산구","은평구","종로구","중구","중랑구"]
+    categories = ["생활용품", "식품", "디지털", "패션", "헬스케어", "반려용품"]
+    warehouses = [("WH-01","서울동부MFC",2500),("WH-02","서울서부MFC",2100),("WH-03","서울남부MFC",1800),("WH-04","서울북부MFC",1700)]
+    case3["region_name"] = [districts[i % len(districts)] for i in range(len(case3))]
+    case3["product_category"] = [categories[i % len(categories)] for i in range(len(case3))]
+    wh = [warehouses[i % len(warehouses)] for i in range(len(case3))]
+    case3["warehouse_id"] = [x[0] for x in wh]
+    case3["warehouse_name"] = [x[1] for x in wh]
+    case3["warehouse_capacity_units"] = [x[2] for x in wh]
+    case3["forecast_demand"] = case3["daily_demand"].clip(lower=20)
+    rank = case3["forecast_demand"].rank(pct=True)
+    risk_seg = np.where(rank > 0.75, "High", np.where(rank > 0.35, "Medium", "Low"))
+    case3["available_inventory"] = np.where(risk_seg == "High", case3["forecast_demand"] * rng.uniform(0.55, 0.9, len(case3)), np.where(risk_seg == "Medium", case3["forecast_demand"] * rng.uniform(0.9, 1.2, len(case3)), case3["forecast_demand"] * rng.uniform(1.3, 2.2, len(case3))))
+    case3["safety_stock"] = case3["forecast_demand"] * rng.uniform(0.1, 0.3, len(case3))
+    case3["stockout_gap"] = (case3["forecast_demand"] + case3["safety_stock"] - case3["available_inventory"]).clip(lower=0)
+    case3["stockout_risk_score"] = case3["stockout_gap"] / (case3["forecast_demand"] + case3["safety_stock"]).replace(0, 1)
+    case3["reorder_priority"] = pd.cut(case3["stockout_risk_score"], bins=[-1, 0.2, 0.5, 2], labels=["Low", "Medium", "High"])
+    case3["business_action"] = "고위험 SKU는 안전재고 20% 상향 및 긴급 reorder 실행"
     case3[
         [
             "warehouse_id",
@@ -123,16 +135,16 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
         ]
     ].to_csv(out / "03_wms_inventory_risk.csv", index=False, encoding="utf-8-sig")
 
-    case4 = pick_pack.head(200).copy()
-    case4["warehouse_id"] = "WH-01"
-    case4["warehouse_name"] = "서울MFC"
-    case4["region_name"] = "강남구"
-    case4["product_category"] = "생활용품"
-    case4["expected_order_lines"] = 1
-    case4["expected_pick_units"] = case4["cycle_time_seconds"] / 30
+    case4 = pick_pack.head(300).copy()
+    case4["warehouse_id"] = case3["warehouse_id"].values[: len(case4)]
+    case4["warehouse_name"] = case3["warehouse_name"].values[: len(case4)]
+    case4["region_name"] = case3["region_name"].values[: len(case4)]
+    case4["product_category"] = case3["product_category"].values[: len(case4)]
+    case4["expected_order_lines"] = rng.integers(1, 6, len(case4))
+    case4["expected_pick_units"] = case3["forecast_demand"].values[: len(case4)] * rng.uniform(0.9, 1.4, len(case4))
     case4["avg_pick_pack_cycle_minutes"] = case4["cycle_time_seconds"] / 60
-    case4["warehouse_capacity_units"] = 10000
-    case4["warehouse_utilization"] = (case4["expected_pick_units"] / 10000).clip(upper=1)
+    case4["warehouse_capacity_units"] = case3["warehouse_capacity_units"].values[: len(case4)]
+    case4["warehouse_utilization"] = (case4["expected_pick_units"] / case4["warehouse_capacity_units"]).clip(0, 1.15)
     case4["workload_risk_level"] = pd.cut(case4["warehouse_utilization"], bins=[-1, 0.5, 0.8, 99], labels=["Low", "Medium", "High"])
     case4["business_action"] = "고부하 시간대 인력 재배치"
     case4[
@@ -152,18 +164,20 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     ].to_csv(out / "04_wms_picking_workload.csv", index=False, encoding="utf-8-sig")
 
     case5 = shipments.merge(delivery, on="shipment_id", how="left").head(500).copy()
-    case5["region_name"] = "서울권"
-    case5["product_category"] = "생활용품"
-    case5["shipment_count"] = 1
+    case5["region_name"] = [districts[i % len(districts)] for i in range(len(case5))]
+    case5["product_category"] = [categories[i % len(categories)] for i in range(len(case5))]
+    case5["shipment_count"] = np.maximum(1, (rng.uniform(60, 420, len(case5)) / 45).astype(int))
     case5["avg_route_distance_km"] = case5["actual_distance_km"]
-    case5["avg_vehicle_utilization"] = 0.7
-    case5["on_time_delivery_rate"] = (
-        (pd.to_datetime(case5["delivered_ts"]) - pd.to_datetime(case5["pickup_ts"])) / pd.Timedelta(hours=1)
-        <= case5["promised_hours"]
-    ).astype(float)
-    case5["late_delivery_risk_score"] = 1 - case5["on_time_delivery_rate"]
-    case5["risk_level"] = pd.cut(case5["late_delivery_risk_score"], bins=[-1, 0.05, 0.2, 99], labels=["Low", "Medium", "High"])
-    case5["business_action"] = "고위험 구간 우선 배차"
+    case5["avg_vehicle_utilization"] = rng.uniform(0.45, 0.95, len(case5))
+    dist = (case5["avg_route_distance_km"] - case5["avg_route_distance_km"].min()) / (case5["avg_route_distance_km"].max() - case5["avg_route_distance_km"].min() + 1e-6)
+    util = (case5["avg_vehicle_utilization"] - case5["avg_vehicle_utilization"].min()) / (case5["avg_vehicle_utilization"].max() - case5["avg_vehicle_utilization"].min() + 1e-6)
+    peak = rng.uniform(0, 1, len(case5))
+    cv = rng.uniform(0.1, 0.8, len(case5))
+    noise = rng.uniform(0, 1, len(case5))
+    case5["late_delivery_risk_score"] = (0.30 * dist + 0.25 * util + 0.25 * peak + 0.15 * cv + 0.05 * noise).clip(0, 1)
+    case5["on_time_delivery_rate"] = (0.98 - 0.35 * case5["late_delivery_risk_score"] + rng.normal(0, 0.02, len(case5))).clip(0.75, 0.99)
+    case5["risk_level"] = pd.cut(case5["late_delivery_risk_score"], bins=[-1, 0.35, 0.6, 2], labels=["Low", "Medium", "High"])
+    case5["business_action"] = "고위험 권역 임시 차량 배치 및 권역 재조정"
     case5[
         [
             "region_name",

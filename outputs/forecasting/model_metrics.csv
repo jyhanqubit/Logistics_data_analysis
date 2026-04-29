@@ -1,3 +1,7 @@
 ﻿model,mae,rmse,wape,smape
 seasonal_naive_lag7,16.2149,21.7176,0.0755,0.093
-gradient_boosting,13.9292,18.744,0.0648,0.0788
+linear_regression,14.9612,19.6895,0.0696,0.1088
+ridge,14.9747,19.7037,0.0697,0.109
+random_forest,13.4694,18.2653,0.0627,0.0751
+gradient_boosting,13.9207,18.6333,0.0648,0.0795
+hist_gradient_boosting,14.1325,19.0606,0.0658,0.0785

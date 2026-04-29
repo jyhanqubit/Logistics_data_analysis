@@ -1,4 +1,11 @@
-﻿action_id,priority,area,expected_impact_score,implementation_urgency,recommended_action
-A001,High,Forecasting / WMS,0.9,0.9,피크 전 안전재고/피킹 인력 증설
-A002,Medium,TMS,0.6,0.6,고위험 지역 우선 배차/차량 증설
-A003,Medium,Recommendation,0.6,0.3,락커 후보지 우선 설치 검토
+﻿action_id,priority,area,expected_impact_score,implementation_urgency,action_value,recommended_action
+A001,High,Forecasting,0.9,0.9,0.9000000000000001,피크 시즌 전용 재학습과 high-error segment 수동 rule을 병행 적용하세요.
+A002,High,TMS,0.85,0.9,0.8700000000000001,SLA 고위험 지역 우선 배차 규칙과 임시 차량 슬롯을 배치하세요.
+A003,High,Recommendation,0.8,0.6,0.72,상위 3개 후보지를 현장 실사 shortlist에 포함하세요.
+A004,Medium,OMS,0.75,0.6,0.69,피크 주간 OMS cut-off를 1시간 앞당기고 출고 wave를 추가 증설합니다.
+A005,Medium,WMS,0.78,0.6,0.708,고위험 SKU 안전재고를 20% 상향하고 리오더 트리거를 당겨 발주합니다.
+A006,Medium,Optimization,0.72,0.6,0.6719999999999999,고부하 차량 route를 분할하고 capacity 재배분 룰을 적용합니다.
+A007,Low,QUBO,0.55,0.3,0.45,상위 3개 feasible 조합을 heuristic/CVRP 결과와 교차검증해 최종 후보지를 확정합니다.
+A008,Low,Forecasting,0.5,0.3,0.42,고오차 세그먼트에 외생변수(행사/휴일/기상) feature를 추가해 재학습하세요.
+A009,Medium,WMS,0.7,0.6,0.6599999999999999,고위험 SKU군을 주간 cycle count 대상으로 지정하고 전진배치를 검토하세요.
+A010,Medium,Optimization,0.68,0.6,0.648,저적재 차량 route grouping 및 capacity 재조정을 수행하세요.
