@@ -6,7 +6,8 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, HistGradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from .db import query_df
@@ -40,19 +41,19 @@ def load_forecasting_dataset(db_path: Path) -> pd.DataFrame:
             c.category_name,
             c.perishability_score,
             c.bulky_score,
-            f.inbound_volume,
-            cal.month,
-            cal.day_of_week,
-            cal.is_weekend,
-            cal.is_holiday,
-            cal.week_of_year
+            f.inbound_volume
         FROM fact_daily_demand f
         JOIN dim_region r ON f.dest_region_id = r.region_id
         JOIN dim_category c ON f.category_id = c.category_id
-        JOIN dim_calendar cal ON f.date_key = cal.date_key
         ORDER BY f.dest_region_id, f.category_id, f.date_key
     """)
     df["date_key"] = pd.to_datetime(df["date_key"])
+    iso = df["date_key"].dt.isocalendar()
+    df["month"] = df["date_key"].dt.month.astype(int)
+    df["day_of_week"] = df["date_key"].dt.dayofweek.astype(int)
+    df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
+    df["is_holiday"] = 0
+    df["week_of_year"] = iso.week.astype(int)
     return df
 
 
@@ -105,54 +106,77 @@ def run_forecasting(db_path: Path, output_dir: Path, model_dir: Path, test_days:
 
     raw = load_forecasting_dataset(db_path)
     df = make_features(raw)
-    cutoff = df["date_key"].max() - pd.Timedelta(days=test_days - 1)
+    unique_days = int(df["date_key"].nunique())
+    adaptive_test_days = min(test_days, max(1, unique_days // 3))
+    cutoff = df["date_key"].max() - pd.Timedelta(days=adaptive_test_days - 1)
     train = df[df["date_key"] < cutoff].copy()
     test = df[df["date_key"] >= cutoff].copy()
     if train.empty or test.empty:
-        raise ValueError("Not enough data for temporal split. Increase generated periods or reduce test_days.")
+        if len(df) < 2:
+            raise ValueError("Not enough rows for forecasting after feature engineering.")
+        split_idx = max(1, int(len(df) * 0.8))
+        train = df.iloc[:split_idx].copy()
+        test = df.iloc[split_idx:].copy()
+        if test.empty:
+            test = df.iloc[-1:].copy()
+            train = df.iloc[:-1].copy()
+        if train.empty or test.empty:
+            raise ValueError("Not enough data for temporal split after adaptive fallback.")
 
-    model = GradientBoostingRegressor(random_state=42, n_estimators=180, learning_rate=0.05, max_depth=3)
-    model.fit(train[FEATURE_COLUMNS], train["inbound_volume"])
-    pred = model.predict(test[FEATURE_COLUMNS])
-    test["prediction"] = np.maximum(0, pred).round(2)
+    models = {
+        "linear_regression": LinearRegression(),
+        "ridge": Ridge(alpha=1.0),
+        "random_forest": RandomForestRegressor(n_estimators=140, random_state=42),
+        "gradient_boosting": GradientBoostingRegressor(random_state=42, n_estimators=180, learning_rate=0.05, max_depth=3),
+        "hist_gradient_boosting": HistGradientBoostingRegressor(random_state=42),
+    }
+    predictions: dict[str, np.ndarray] = {}
+    for name, model in models.items():
+        model.fit(train[FEATURE_COLUMNS], train["inbound_volume"])
+        predictions[name] = np.maximum(0, model.predict(test[FEATURE_COLUMNS])).round(2)
 
     # Seasonal naive baseline: lag_7
     test["seasonal_naive"] = test["lag_7"].clip(lower=0)
     y_true = test["inbound_volume"].to_numpy()
-    y_pred = test["prediction"].to_numpy()
+    y_pred = predictions["gradient_boosting"]
     y_base = test["seasonal_naive"].to_numpy()
 
-    metrics = pd.DataFrame([
+    metric_rows = [
         {
             "model": "seasonal_naive_lag7",
             "mae": mean_absolute_error(y_true, y_base),
             "rmse": float(np.sqrt(mean_squared_error(y_true, y_base))),
             "wape": _wape(y_true, y_base),
             "smape": _safe_smape(y_true, y_base),
-        },
-        {
-            "model": "gradient_boosting",
-            "mae": mean_absolute_error(y_true, y_pred),
-            "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
-            "wape": _wape(y_true, y_pred),
-            "smape": _safe_smape(y_true, y_pred),
-        },
-    ])
+        }
+    ]
+    for name, pred in predictions.items():
+        metric_rows.append(
+            {
+                "model": name,
+                "mae": mean_absolute_error(y_true, pred),
+                "rmse": float(np.sqrt(mean_squared_error(y_true, pred))),
+                "wape": _wape(y_true, pred),
+                "smape": _safe_smape(y_true, pred),
+            }
+        )
+    metrics = pd.DataFrame(metric_rows)
     metrics[["mae", "rmse", "wape", "smape"]] = metrics[["mae", "rmse", "wape", "smape"]].round(4)
 
-    feature_importance = pd.DataFrame({
-        "feature": FEATURE_COLUMNS,
-        "importance": model.feature_importances_,
-    }).sort_values("importance", ascending=False)
+    gbm = models["gradient_boosting"]
+    feature_importance = pd.DataFrame({"feature": FEATURE_COLUMNS, "importance": gbm.feature_importances_}).sort_values("importance", ascending=False)
 
     pred_cols = [
         "date_key", "dest_region_id", "region_name", "category_id", "category_name",
         "inbound_volume", "prediction", "seasonal_naive"
     ]
+    for name, pred in predictions.items():
+        test[f"pred_{name}"] = pred
+    test["prediction"] = predictions["gradient_boosting"]
     test[pred_cols].to_csv(output_dir / "forecast_predictions.csv", index=False, encoding="utf-8-sig")
     metrics.to_csv(output_dir / "model_metrics.csv", index=False, encoding="utf-8-sig")
     feature_importance.to_csv(output_dir / "feature_importance.csv", index=False, encoding="utf-8-sig")
-    joblib.dump({"model": model, "features": FEATURE_COLUMNS}, model_dir / "demand_forecast_gbr.joblib")
+    joblib.dump({"model": gbm, "features": FEATURE_COLUMNS}, model_dir / "demand_forecast_gbr.joblib")
 
     best = metrics.sort_values("wape").iloc[0]
     gbm = metrics[metrics["model"] == "gradient_boosting"].iloc[0]
