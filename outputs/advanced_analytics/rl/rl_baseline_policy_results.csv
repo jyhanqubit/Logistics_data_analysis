@@ -1,0 +1,3 @@
+﻿policy,avg_distance,sla_penalty
+random,160.0,0.3
+greedy,140.0,0.2
