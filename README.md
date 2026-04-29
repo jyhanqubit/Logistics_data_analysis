@@ -1,108 +1,84 @@
-# ParcelFlow AI PoC
+# ParcelFlow AI — Logistics Analytics Portfolio
 
-**생활물류 수요예측 · SCM 분석 · 거점/락커 추천 · 배송 최적화 포트폴리오 PoC**
+## Project Overview
+ParcelFlow AI는 공개 생활물류/택배 물동량 데이터를 활용해 **수요예측 PoC를 넘어 OMS/WMS/TMS 운영 분석까지** 확장한 물류 데이터 분석 포트폴리오입니다.
 
-이 레포지토리는 물류 데이터분석가 포트폴리오용으로 만든 실행 가능한 PoC입니다.  
-실제 CJ대한통운 내부 데이터는 사용하지 않고, 서울 생활물류/전국 택배물량 공개데이터와 유사한 구조의 샘플 데이터를 생성해 전체 파이프라인을 검증합니다. 실제 공개 CSV/API를 확보하면 `data/raw/external/`에 넣고 동일한 DB/모델 파이프라인에 연결할 수 있도록 설계했습니다.
+## Business Problem
+생활물류 운영에서는 수요 변동, 재고 리스크, 배송 SLA, 거점 의사결정이 동시에 발생합니다. 이 프로젝트는 이를 하나의 데이터 파이프라인과 분석 케이스북으로 통합합니다.
 
-## 핵심 시나리오
+## Solution Architecture
+- Data ingestion (공개데이터 API/CSV + synthetic fallback)
+- SCM analytics
+- Forecasting (baseline 비교)
+- Recommendation (거점/락커 후보지)
+- Optimization (CVRP heuristic + QUBO 실험)
+- OMS/WMS/TMS simulation analytics layer
 
-> 지역·상품군별 생활물류 수요를 예측하고, 수요 집중 지역에 마이크로 풀필먼트 센터 또는 택배락커 설치 후보지를 추천하며, 소규모 배송 경로 최적화 및 QUBO 기반 양자 최적화 실험까지 연결한다.
+## Data Sources
+- 서울 열린데이터광장 생활물류 API/CSV
+- 공공데이터포털 택배 물동량 API
+- 합성 데이터(재현 가능한 seed 고정)
 
-## 포함 기능
+> 실제 운영 이벤트(주문/피킹/배송)는 공개 집계 데이터를 기반으로 생성한 simulation layer입니다.
 
-| 모듈 | 산출물 |
-|---|---|
-| 데이터 생성/수집 | 공개데이터형 샘플 CSV, SQLite DB, SQL 스키마 |
-| SCM 분석 | OD lane, 지역별 수요, 변동성, 카테고리 피크, 허브 부하 리포트 |
-| 수요예측 | Gradient Boosting 기반 일별 수요 예측, baseline 비교, WAPE/MAE/RMSE/sMAPE |
-| 추천 시스템 | 마이크로 풀필먼트/택배락커 후보지 랭킹 및 추천 사유 |
-| 최적화 | CVRP greedy route, 2-opt 개선, QUBO hub-selection 실험 |
-| Codex 연동 | `AGENTS.md`, Codex 작업 프롬프트, MCP 예시 코드 |
-| 대시보드 | Streamlit 앱 예시 |
+## OMS/WMS/TMS Analytics Layer
+`src/parcelflow/ops_simulation/`에서 다음 테이블을 생성합니다.
+- orders, order_lines, inventory_snapshot, pick_pack_events
+- shipments, delivery_events
+- oms_kpi, wms_kpi, tms_kpi
 
-## 빠른 실행
+출력 위치: `outputs/ops_simulation/`
 
+## Analysis Casebook
+`analysis_cases/`에 OMS/WMS/TMS + forecasting/recommendation/optimization 케이스를 문서화했습니다.
+
+## Forecasting
+- 일별/지역/카테고리 수요 예측
+- seasonal naive baseline 대비 성능 비교
+
+## Recommendation System
+- 마이크로풀필먼트/택배락커 후보지 점수화
+- 추천 사유(explainability) 제공
+
+## Optimization
+- 배송 경로 최적화(heuristic)
+- QUBO 기반 거점 선택 실험
+
+## Vector DB / Copilot Roadmap
+- 운영 이벤트·KPI·케이스북을 벡터 인덱스로 연결
+- 분석 질의형 Copilot 확장
+
+## Repository Structure
+- `src/parcelflow/`: 분석/모델/시뮬레이션 패키지
+- `scripts/`: 실행 스크립트
+- `dashboard/`: Streamlit 대시보드
+- `analysis_cases/`: 포트폴리오 분석 문서
+- `docs/business_context/`: OMS/WMS/TMS 업무 맥락
+
+## How to Run
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/run_pipeline.py
+pytest -q
 ```
 
-실행 후 주요 결과물:
+## Security and Data Policy
+- `.env`, API key, raw data, sqlite DB 등 민감/로컬 파일은 커밋하지 않습니다.
+- 본 프로젝트는 특정 회사 내부 원천 데이터를 사용하지 않습니다.
 
-```text
-outputs/
-├── scm/
-│   ├── top_od_lanes.csv
-│   ├── region_daily_volume.csv
-│   ├── region_volatility.csv
-│   └── scm_summary.md
-├── forecasting/
-│   ├── forecast_predictions.csv
-│   ├── model_metrics.csv
-│   ├── feature_importance.csv
-│   └── forecast_summary.md
-├── recommender/
-│   ├── site_recommendations.csv
-│   └── recommendation_summary.md
-└── optimization/
-    ├── route_plan.csv
-    ├── route_summary.md
-    ├── qubo_matrix.csv
-    └── qubo_solution.csv
-```
+## Portfolio Highlights
+- 공개데이터 기반 End-to-End 물류 분석 파이프라인
+- OMS/WMS/TMS 운영 이해를 KPI/케이스로 구조화
+- 예측·추천·최적화를 하나의 비즈니스 스토리로 연결
 
-## 대시보드 실행
-
-```bash
-pip install streamlit
-streamlit run dashboard/app.py
-```
-
-## 실제 공개데이터 연결 아이디어
-
-이 PoC의 기본 데이터는 샘플 생성 데이터입니다. 실제 포트폴리오에서는 다음 공개데이터를 연결하면 됩니다.
-
-1. 서울 열린데이터광장 생활물류 데이터
-2. 공공데이터포털 우편번호별 택배물량 데이터
-3. 국가물류통합정보센터 택배 물동량/매출액/단가 통계
-4. DART/CJ대한통운 사업보고서 기반 사업부문·시장 배경 정보
-
-실제 CSV 연결은 `src/parcelflow/ingestion_external.py`에 확장 포인트를 남겨두었습니다.
-
-## Codex 활용 방법
-
-이 레포는 Codex가 바로 이해하고 작업할 수 있도록 `AGENTS.md`와 `.codex/prompts/`를 포함합니다.
-
-예시:
-
-```bash
-codex
-# 또는 MCP 서버 방식
-codex mcp-server
-```
-
-Codex에게 다음처럼 요청하면 됩니다.
-
-```text
-AGENTS.md를 읽고, .codex/prompts/01_data_engineering.md의 요구사항대로 실제 서울 생활물류 CSV를 연결하는 ingestion 코드를 구현해줘.
-```
-
-## 포트폴리오 어필 포인트
-
-이 프로젝트는 단순 EDA가 아니라 아래 역량을 동시에 보여줍니다.
-
-- SQL/DB 모델링: fact/dim 구조, 데이터 품질 체크, 데이터 사전
-- SCM 분석: OD 흐름, 수요 집중도, 변동성, 피크 분석
-- ML: 시계열 피처링, baseline 비교, backtest, feature importance
-- 추천 시스템: 비즈니스 점수화 + 모델 출력 기반 랭킹
-- 최적화: VRP/CVRP 접근, QUBO formulation, 양자 최적화 PoC 설계
-- 제품화: 대시보드, 리포트, 자동 파이프라인, Codex-ready 개발 지침
-
-## 주의사항
-
-- 본 PoC의 기본 데이터는 합성 데이터입니다.
-- 실제 CJ대한통운 내부 운영 데이터가 아니므로 “CJ대한통운 전체 물류망 분석”으로 표현하면 안 됩니다.
-- 양자 최적화 모듈은 실무 적용 엔진이 아니라 소규모 비교 실험/PoC입니다.
+## Advanced Analytics Modules
+- Regression
+- Classification
+- Statistical Testing
+- Time Series
+- Clustering
+- Optimization Formulation
+- Extended QUBO
+- RL / DPO / PPO Feasibility
