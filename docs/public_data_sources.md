@@ -43,3 +43,16 @@
 - 특정 회사 내부 운영 데이터로 오해될 표현을 피합니다.
 - 통계성/집계성 데이터의 범위와 한계를 명확히 씁니다.
 - 원천(raw) 파일이 이미 존재하면 기본적으로 재다운로드하지 않습니다. 강제 갱신이 필요하면 `DOWNLOAD_FORCE_REFRESH=true`를 사용합니다.
+
+## 실데이터 준비 품질 리포트
+
+실데이터 모드(`USE_REAL_DATA=true`)에서 파이프라인 실행 시 아래 리포트가 자동 생성됩니다.
+
+- `outputs/data_quality/real_data_preparation_quality.csv`
+- `outputs/data_quality/real_data_preparation_quality.md`
+
+포함 지표:
+- 정규화/매핑 전후 row 수
+- 매핑 실패로 drop된 row 수와 비율
+- category remap row 수와 비율
+- `fact_daily_demand` 날짜 커버리지(최소~최대, unique date 수)
