@@ -1,0 +1,4 @@
+﻿action_id,priority,area,expected_impact_score,implementation_urgency,recommended_action
+A001,High,Forecasting / WMS,0.9,0.9,피크 전 안전재고/피킹 인력 증설
+A002,Medium,TMS,0.6,0.6,고위험 지역 우선 배차/차량 증설
+A003,Medium,Recommendation,0.6,0.3,락커 후보지 우선 설치 검토
