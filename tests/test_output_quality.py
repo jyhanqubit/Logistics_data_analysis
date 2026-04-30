@@ -38,7 +38,8 @@ def test_wms_and_tms_quality():
 
 
 def test_qubo_bitstring_consistency():
-    sol = _read(Path("outputs/advanced_analytics/qubo/qubo_solution_extended.csv"))
+    path = Path("outputs/advanced_analytics/qubo/qubo_solution_extended.csv")
+    sol = pd.read_csv(path, dtype={"bitstring": str}) if path.exists() else pd.DataFrame()
     mat = _read(Path("outputs/advanced_analytics/qubo/qubo_matrix_extended.csv"))
     if sol.empty or mat.empty or "bitstring" not in sol.columns:
         return

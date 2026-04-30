@@ -1,4 +1,11 @@
-﻿action_id,priority,area,business_finding,recommended_action,expected_impact,evidence_metric,evidence_value,risk_level,owner_function,dashboard_section
-A001,High,Forecasting / WMS,피크 시즌 수요 변동이 높음,피크 전 안전재고/피킹 인력 증설,stockout/출고지연 감소,best_wape,0.0242266860461712,High,WMS / Inventory,Executive Impact Summary
-A002,Medium,TMS,일부 지역 SLA 지연 리스크,고위험 지역 우선 배차/차량 증설,정시배송률 개선,mean_late_delivery_risk_score,0.472,Medium,TMS,TMS Dashboard
-A003,Medium,Recommendation,수요밀집 지역의 라스트마일 개선 여지,락커 후보지 우선 설치 검토,배송재시도/거리 감소,recommended_locker_sites,25.0,Low,Network Planning,Recommendation
+﻿action_id,priority,area,business_finding,recommended_action,expected_impact,evidence_metric,evidence_value,risk_level,owner_function,dashboard_section,expected_impact_score,implementation_urgency,action_value
+A001,High,Forecasting,"Best model=RandomForestRegressor, WAPE=0.024. 피크 구간 오차 관리가 필요합니다.",피크 시즌 전용 재학습과 high-error segment 수동 rule을 병행 적용하세요.,예측 오차 감소로 재고/차량 과부족 리스크 완화,best_model_wape,0.0242266860461712,High,Data Science,Executive Impact Summary,0.9,0.8,0.86
+A002,High,TMS,금천구의 SLA 리스크가 상위권이며 평균 risk score=0.474입니다.,SLA 고위험 지역 우선 배차 규칙과 임시 차량 슬롯을 배치하세요.,정시배송률 개선 및 지연패널티 감소,mean_late_delivery_risk_score,0.4735075724213342,High,TMS,TMS Dashboard,0.85,0.85,0.85
+A003,High,Recommendation,송파구 locker_score=0.908로 상위권입니다.,상위 3개 후보지를 현장 실사 shortlist에 포함하세요.,라스트마일 이동거리 및 재배송 감소,top_locker_score,0.9082,Medium,Network Planning,Recommendation,0.8,0.6,0.72
+A004,Medium,OMS,피크 주문군에서 출고지시 지연이 집중되는 패턴이 관찰됩니다.,피크 주간 OMS cut-off를 1시간 앞당기고 출고 wave를 추가 증설합니다.,주문-출고 lead time 단축,peak_order_ratio,1.25,Medium,OMS,OMS Dashboard,0.75,0.65,0.71
+A005,Medium,WMS,재고 커버리지 하위 SKU군에서 stockout 발생 확률이 높습니다.,고위험 SKU 안전재고를 20% 상향하고 리오더 트리거를 당겨 발주합니다.,품절 및 긴급출고 감소,high_stockout_sku_count,12.0,Medium,WMS,WMS Dashboard,0.78,0.7,0.748
+A006,Medium,Optimization,차량별 부하 편차가 커 특정 차량의 route distance가 과다합니다.,고부하 차량 route를 분할하고 capacity 재배분 룰을 적용합니다.,평균 경로거리와 초과근무 비용 절감,route_distance_cv,0.31,Medium,TMS,Optimization,0.72,0.58,0.664
+A007,Low,QUBO,QUBO 상위 feasible 조합이 동일 후보지를 반복 선택합니다.,상위 3개 feasible 조합을 heuristic/CVRP 결과와 교차검증해 최종 후보지를 확정합니다.,거점선정 의사결정 일관성 확보,qubo_top_feasible_count,10.0,Low,Network Planning,QUBO / Quantum PoC,0.55,0.35,0.47
+A008,Low,Forecasting,일부 지역-상품군에서 절대오차 상위 segment가 8건입니다.,고오차 세그먼트에 외생변수(행사/휴일/기상) feature를 추가해 재학습하세요.,고오차 세그먼트 안정화,high_error_segment_count,8.0,Low,Data Science,Forecasting & Regression,0.5,0.4,0.46
+A009,Medium,WMS,재고부족 위험 SKU 비중이 15%를 초과했습니다.,고위험 SKU군을 주간 cycle count 대상으로 지정하고 전진배치를 검토하세요.,피킹 지연 및 결품 리스크 감소,high_stockout_ratio,0.15,Medium,Inventory Planning,WMS Dashboard,0.7,0.72,0.708
+A010,Medium,Optimization,차량 적재율 하위 20% 차량이 존재합니다(utilization<0.5).,저적재 차량 route grouping 및 capacity 재조정을 수행하세요.,차량 운영비 절감 및 SLA 안정화,low_utilization_vehicle_count,4.0,Medium,TMS Planning,Optimization,0.68,0.66,0.672
