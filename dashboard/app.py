@@ -160,9 +160,9 @@ with tabs[0]:
     llm_context = ""
     if not insights_actions.empty:
         llm_context += insights_actions.head(8).to_csv(index=False)
-    if not cases["wms_inv"].empty:
+    if not cases["wms_inv"].empty and "stockout_risk_score" in cases["wms_inv"].columns:
         llm_context += "\nWMS:\n" + cases["wms_inv"].sort_values("stockout_risk_score", ascending=False).head(5).to_csv(index=False)
-    if not cases["tms_sla"].empty:
+    if not cases["tms_sla"].empty and "late_delivery_risk_score" in cases["tms_sla"].columns:
         llm_context += "\nTMS:\n" + cases["tms_sla"].sort_values("late_delivery_risk_score", ascending=False).head(5).to_csv(index=False)
     llm_msg = generate_llm_insight(llm_context) if st.toggle("Use OpenAI-generated executive insight", value=False) else None
     st.info(llm_msg or msg)

@@ -11,7 +11,7 @@ SEOUL_DISTRICTS = {
 def assert_no_placeholder_text(df: pd.DataFrame) -> None:
     tokens = {"Action", "사유 정보 없음", "Region-1", "Region-2", "Cluster-0", "서울권"}
     text = df.astype(str)
-    assert ~text.isin(tokens).any().any()
+    assert not text.isin(tokens).any().any()
 
 
 def assert_metric_not_all_zero(df: pd.DataFrame, col: str) -> None:
@@ -35,5 +35,5 @@ def assert_region_names_are_real_seoul_districts(df: pd.DataFrame, col: str = "r
 
 def assert_business_actions_are_specific(df: pd.DataFrame) -> None:
     assert df["recommended_action"].notna().all()
-    assert ~df["recommended_action"].astype(str).isin(["Action", "사유 정보 없음"]).any()
+    assert not df["recommended_action"].astype(str).isin(["Action", "사유 정보 없음"]).any()
     assert df["business_finding"].astype(str).str.contains(r"\d", regex=True).all()

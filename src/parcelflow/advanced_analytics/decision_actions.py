@@ -53,7 +53,10 @@ def build_action_priority_matrix(actions_df: pd.DataFrame, out_dir: Path) -> Pat
     impact_map = {"High": 0.9, "Medium": 0.6, "Low": 0.3}
     risk_map = {"High": 0.9, "Medium": 0.6, "Low": 0.3}
     df["expected_impact_score"] = df.get("expected_impact_score", df["priority"].map(impact_map)).fillna(0.5)
-    df["implementation_urgency"] = df.get("urgency_score", df["risk_level"].map(risk_map)).fillna(0.5)
+    if "implementation_urgency" in df.columns:
+        df["implementation_urgency"] = df["implementation_urgency"].fillna(df["risk_level"].map(risk_map)).fillna(0.5)
+    else:
+        df["implementation_urgency"] = df.get("urgency_score", df["risk_level"].map(risk_map)).fillna(0.5)
     df["action_value"] = 0.6 * df["expected_impact_score"] + 0.4 * df["implementation_urgency"]
     path = out_dir / "action_priority_matrix.csv"
     df[
