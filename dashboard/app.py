@@ -15,6 +15,26 @@ st.title("ParcelFlow AI — Deep Analytics Dashboard")
 st.caption("Made by 한정연(Jaiden Han)")
 
 
+def generate_llm_insight(context: str) -> str | None:
+    api_key = st.secrets.get("OPENAI_API_KEY", None) or __import__("os").getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        resp = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {"role": "system", "content": "당신은 공개 생활물류 + 시뮬레이션 데이터 기반 운영분석가입니다. 내부 실데이터로 단정하지 말고 근거 숫자를 포함한 4문장 요약을 작성하세요."},
+                {"role": "user", "content": context},
+            ],
+            max_output_tokens=220,
+        )
+        return resp.output_text.strip()
+    except Exception:
+        return None
+
+
 def read_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
@@ -137,7 +157,15 @@ with tabs[0]:
         )
     else:
         msg = "핵심 액션 데이터가 부족합니다. pipeline 실행 후 insights 산출물을 확인하세요."
-    st.info(msg)
+    llm_context = ""
+    if not insights_actions.empty:
+        llm_context += insights_actions.head(8).to_csv(index=False)
+    if not cases["wms_inv"].empty:
+        llm_context += "\nWMS:\n" + cases["wms_inv"].sort_values("stockout_risk_score", ascending=False).head(5).to_csv(index=False)
+    if not cases["tms_sla"].empty:
+        llm_context += "\nTMS:\n" + cases["tms_sla"].sort_values("late_delivery_risk_score", ascending=False).head(5).to_csv(index=False)
+    llm_msg = generate_llm_insight(llm_context) if st.toggle("Use OpenAI-generated executive insight", value=False) else None
+    st.info(llm_msg or msg)
 
     c1, c2, c3, c4 = st.columns(4)
     high_actions = int((insights_actions["priority"] == "High").sum()) if not insights_actions.empty and "priority" in insights_actions.columns else 0
@@ -167,8 +195,8 @@ with tabs[0]:
     else:
         preview = insights_actions.head(8).copy()
         for _, row in preview.iterrows():
-            title = row.get("action_title", row.get("business_action", "Action"))
-            reason = row.get("reason", row.get("action_reason", "사유 정보 없음"))
+            title = row.get("recommended_action", row.get("action_title", "Action"))
+            reason = row.get("business_finding", row.get("reason", row.get("action_reason", "근거 데이터 확인 필요")))
             st.markdown(f"#### ✅ {title}")
             st.write(reason)
     st.markdown("### Action Priority Matrix")
@@ -361,12 +389,14 @@ with tabs[7]:
     st.dataframe(decomp.head(40) if not decomp.empty else pd.DataFrame({"message": ["decomposition 없음"]}), use_container_width=True)
     if not decomp.empty and {"observed", "trend", "seasonal", "arima_fitted"}.issubset(decomp.columns):
         st.line_chart(decomp[["observed", "trend", "seasonal", "arima_fitted"]].head(180))
+        st.caption("seasonal은 '관측값에서 추세를 제거한 주기 성분(평균 0 중심)'이므로 음수가 정상입니다. 음수는 평균 대비 낮은 요일/주차 효과를 의미합니다.")
     st.dataframe(acf.head(40) if not acf.empty else pd.DataFrame({"message": ["acf_pacf 없음"]}), use_container_width=True)
     if not acf.empty and {"lag", "correlation", "function_type"}.issubset(acf.columns):
         acf_df = acf[acf["function_type"] == "ACF"].head(28)
         pacf_df = acf[acf["function_type"] == "PACF"].head(28)
         st.altair_chart(alt.Chart(acf_df).mark_line(point=True).encode(x=alt.X("lag:Q", title="Lag"), y=alt.Y("correlation:Q", title="ACF"), tooltip=["lag", "correlation"]), use_container_width=True)
         st.altair_chart(alt.Chart(pacf_df).mark_line(point=True).encode(x=alt.X("lag:Q", title="Lag"), y=alt.Y("correlation:Q", title="PACF"), tooltip=["lag", "correlation"]), use_container_width=True)
+        st.info("lag=7 피크는 '주간(7일) 반복 수요 패턴' 신호입니다. ACF 7 피크는 1주 전 물동량과 현재 물동량 상관이 높다는 뜻이고, PACF 7 피크는 중간 lag 효과를 통제해도 7일 주기가 직접 영향이 있음을 시사합니다.")
     st.dataframe(ccf.head(20) if not ccf.empty else pd.DataFrame({"message": ["cross_correlation 없음"]}), use_container_width=True)
 
 with tabs[8]:
@@ -423,6 +453,17 @@ with tabs[8]:
         except Exception:
             st.map(cluster_assign.rename(columns={"lat": "latitude", "lon": "longitude"})[["latitude", "longitude"]])
     st.dataframe(cluster_assign.head(30) if not cluster_assign.empty else pd.DataFrame({"message": ["cluster_assignments 없음"]}), use_container_width=True)
+    if not cluster_assign.empty and {"cluster_id", "region_name"}.issubset(cluster_assign.columns):
+        st.markdown("### Cluster Group Summary (구 단위)")
+        cluster_text = []
+        for cid, grp in cluster_assign.groupby("cluster_id"):
+            regions = ", ".join(grp["region_name"].astype(str).head(8).tolist())
+            cluster_text.append({"cluster_id": int(cid), "districts": regions, "count": int(grp["region_name"].nunique())})
+        st.dataframe(pd.DataFrame(cluster_text), use_container_width=True)
+        cluster_prompt = "각 클러스터의 지역 목록과 avg_volume/cv/peak_ratio를 근거로 왜 군집이 형성됐는지 운영 관점으로 설명:\n" + cluster_assign.head(25).to_csv(index=False)
+        llm_cluster = generate_llm_insight(cluster_prompt) if st.toggle("Use OpenAI cluster interpretation", value=False) else None
+        if llm_cluster:
+            st.success(llm_cluster)
 
 with tabs[9]:
     st.subheader("Recommendation")
