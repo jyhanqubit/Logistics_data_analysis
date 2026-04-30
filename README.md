@@ -101,6 +101,14 @@ pip install -r requirements.txt
 python scripts/run_pipeline.py
 ```
 
+선택: OpenAI 기반 Executive Summary를 함께 생성하려면
+```bash
+export OPENAI_API_KEY=sk-...   # 따옴표 없이 권장
+python scripts/run_pipeline.py
+```
+> `.env`에 키를 넣는 경우 `OPENAI_API_KEY=sk-...` 형태를 권장합니다.  
+> `OPENAI_API_KEY="sk-..."`처럼 따옴표가 있어도 코드에서 자동 정규화합니다.
+
 ### 6-3. 테스트 실행
 ```bash
 pytest -q
