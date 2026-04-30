@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -91,23 +92,34 @@ def _generate_openai_summary(actions_df: pd.DataFrame, api_key: str) -> str | No
     except Exception:
         return None
 
-    context = actions_df.head(8).to_csv(index=False)
-    client = OpenAI(api_key=api_key)
-    resp = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {
-                "role": "system",
-                "content": (
-                    "당신은 공개 생활물류/시뮬레이션 기반 운영분석가입니다. "
-                    "내부 실데이터라고 단정하지 말고, 숫자 근거를 포함한 4문장 요약을 작성하세요."
-                ),
-            },
-            {"role": "user", "content": context},
-        ],
-        max_output_tokens=220,
-    )
-    return (resp.output_text or "").strip() or None
+    try:
+        min_interval = float(os.getenv("OPENAI_MIN_INTERVAL_SEC", "4.0"))
+        if min_interval > 0:
+            last_called = float(os.getenv("PARCELFLOW_OPENAI_LAST_CALLED_TS", "0") or 0)
+            now = time.time()
+            wait_sec = min_interval - (now - last_called)
+            if wait_sec > 0:
+                time.sleep(wait_sec)
+        context = actions_df.head(8).to_csv(index=False)
+        client = OpenAI(api_key=api_key)
+        resp = client.responses.create(
+            model="gpt-4.1-nano",
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "당신은 공개 생활물류/시뮬레이션 기반 운영분석가입니다. "
+                        "내부 실데이터라고 단정하지 말고, 숫자 근거를 포함한 4문장 요약을 작성하세요."
+                    ),
+                },
+                {"role": "user", "content": context},
+            ],
+            max_output_tokens=220,
+        )
+        os.environ["PARCELFLOW_OPENAI_LAST_CALLED_TS"] = str(time.time())
+        return (resp.output_text or "").strip() or None
+    except Exception:
+        return None
 
 
 def generate_executive_summary(actions_df: pd.DataFrame, out_dir: Path) -> Path:
