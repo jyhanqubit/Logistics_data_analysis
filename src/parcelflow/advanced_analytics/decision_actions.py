@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -73,12 +75,74 @@ def build_action_priority_matrix(actions_df: pd.DataFrame, out_dir: Path) -> Pat
     return path
 
 
+def _normalize_api_key(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    key = raw.strip()
+    if not key:
+        return None
+    if (key.startswith('"') and key.endswith('"')) or (key.startswith("'") and key.endswith("'")):
+        key = key[1:-1].strip()
+    return key or None
+
+
+def _generate_openai_summary(actions_df: pd.DataFrame, api_key: str) -> str | None:
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None
+
+    try:
+        min_interval = float(os.getenv("OPENAI_MIN_INTERVAL_SEC", "4.0"))
+        if min_interval > 0:
+            last_called = float(os.getenv("PARCELFLOW_OPENAI_LAST_CALLED_TS", "0") or 0)
+            now = time.time()
+            wait_sec = min_interval - (now - last_called)
+            if wait_sec > 0:
+                time.sleep(wait_sec)
+        context = actions_df.head(8).to_csv(index=False)
+        client = OpenAI(api_key=api_key)
+        resp = client.responses.create(
+            model="gpt-4.1-nano",
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "당신은 공개 생활물류/시뮬레이션 기반 운영분석가입니다. "
+                        "내부 실데이터라고 단정하지 말고, 숫자 근거를 포함한 4문장 요약을 작성하세요."
+                    ),
+                },
+                {"role": "user", "content": context},
+            ],
+            max_output_tokens=220,
+        )
+        os.environ["PARCELFLOW_OPENAI_LAST_CALLED_TS"] = str(time.time())
+        return (resp.output_text or "").strip() or None
+    except Exception:
+        return None
+
+
 def generate_executive_summary(actions_df: pd.DataFrame, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     top = actions_df.head(5)
     lines = ["# Executive Summary", "", "공개데이터 + simulation layer 기반 의사결정 권고안입니다.", ""]
     for _, r in top.iterrows():
         lines.append(f"- [{r['priority']}] {r['business_finding']} -> {r['recommended_action']}")
+    raw_key = os.getenv("OPENAI_API_KEY")
+    api_key = _normalize_api_key(raw_key)
+    if api_key:
+        llm_text = _generate_openai_summary(actions_df, api_key)
+        if llm_text:
+            lines.extend(["", "## OpenAI Summary (Optional)", llm_text])
+        else:
+            lines.extend(
+                [
+                    "",
+                    "## OpenAI Summary (Optional)",
+                    "- OPENAI_API_KEY는 감지되었지만 OpenAI 요약 생성에 실패했습니다.",
+                    "- `pip install openai` 후 키/네트워크 상태를 확인하고 다시 실행하세요.",
+                ]
+            )
     path = out_dir / "executive_summary.md"
     path.write_text("\n".join(lines), encoding="utf-8")
     return path

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = ROOT / "outputs"
@@ -16,20 +18,33 @@ st.caption("Made by 한정연(Jaiden Han)")
 
 
 def generate_llm_insight(context: str) -> str | None:
-    api_key = st.secrets.get("OPENAI_API_KEY", None) or __import__("os").getenv("OPENAI_API_KEY")
+    api_key = None
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", None)
+    except StreamlitSecretNotFoundError:
+        api_key = None
+    api_key = api_key or __import__("os").getenv("OPENAI_API_KEY")
     if not api_key:
+        return None
+    min_interval_sec = 4.0
+    now = time.time()
+    last_called = float(st.session_state.get("openai_last_called_ts", 0.0))
+    wait_sec = min_interval_sec - (now - last_called)
+    if wait_sec > 0:
+        st.info(f"OpenAI 요청 간격을 조절 중입니다. 약 {wait_sec:.1f}초 후 다시 시도하세요.")
         return None
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
         resp = client.responses.create(
-            model="gpt-4.1-mini",
+            model="gpt-4.1-nano",
             input=[
                 {"role": "system", "content": "당신은 공개 생활물류 + 시뮬레이션 데이터 기반 운영분석가입니다. 내부 실데이터로 단정하지 말고 근거 숫자를 포함한 4문장 요약을 작성하세요."},
                 {"role": "user", "content": context},
             ],
             max_output_tokens=220,
         )
+        st.session_state["openai_last_called_ts"] = time.time()
         return resp.output_text.strip()
     except Exception:
         return None
