@@ -2,7 +2,7 @@
 
 ## 모델 비교
 
-- Best model by WAPE: **gradient_boosting**
+- Best model by WAPE: **random_forest**
 - Seasonal naive WAPE: **7.55%**
 - Gradient Boosting WAPE: **6.48%**
 - WAPE 개선율: **14.17%**

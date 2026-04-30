@@ -1,0 +1,78 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+
+# =========================
+# Environment variables / Secrets
+# =========================
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Keep example env file
+!.env.example
+
+# =========================
+# Local databases
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Raw / external / processed data
+# 원본 공개데이터 CSV, 다운로드 파일은 GitHub에 올리지 않음
+# =========================
+data/raw/**
+data/external/**
+data/processed/**
+
+# Keep directory placeholders
+!data/raw/
+!data/raw/**/
+!data/raw/**/.gitkeep
+!data/external/
+!data/external/**/
+!data/external/**/.gitkeep
+!data/processed/
+!data/processed/**/
+!data/processed/**/.gitkeep
+
+# =========================
+# Model artifacts / cache
+# =========================
+models/
+artifacts/
+.cache/
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# OS / IDE
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
