@@ -89,7 +89,10 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case1["avg_order_to_release_hours"] = (rng.uniform(2.0, 4.0, len(case1)) + peak_penalty + volume_norm * 1.5 + cat_penalty + rng.normal(0, 0.25, len(case1))).clip(1.5, 10.0)
     case1["p95_order_to_release_hours"] = case1["avg_order_to_release_hours"] + rng.uniform(2.0, 5.0, len(case1))
     case1["delayed_release_rate"] = (1 / (1 + np.exp(-(case1["avg_order_to_release_hours"] - 4.5) / 1.1))).clip(0.03, 0.25)
-    case1["business_action"] = "상위 지연 구간은 OMS cut-off 조정 및 출고 wave 증설"
+    case1["business_action"] = case1.apply(
+        lambda r: f"{r['region_name']}-{r['product_category']}은 P95 {r['p95_order_to_release_hours']:.1f}h로 지연 tail이 큽니다. OMS cut-off 1시간 조정 및 wave 증설 필요",
+        axis=1,
+    )
     case1.to_csv(out / "01_oms_order_flow.csv", index=False, encoding="utf-8-sig")
 
     case2 = case1.groupby(["region_name", "product_category"], as_index=False)["order_count"].sum()
@@ -119,7 +122,10 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case3["stockout_gap"] = (case3["forecast_demand"] + case3["safety_stock"] - case3["available_inventory"]).clip(lower=0)
     case3["stockout_risk_score"] = case3["stockout_gap"] / (case3["forecast_demand"] + case3["safety_stock"]).replace(0, 1)
     case3["reorder_priority"] = pd.cut(case3["stockout_risk_score"], bins=[-1, 0.2, 0.5, 2], labels=["Low", "Medium", "High"])
-    case3["business_action"] = "고위험 SKU는 안전재고 20% 상향 및 긴급 reorder 실행"
+    case3["business_action"] = case3.apply(
+        lambda r: f"{r['region_name']}-{r['product_category']} stockout_risk={r['stockout_risk_score']:.2f}. 안전재고 상향 및 reorder 우선 적용",
+        axis=1,
+    )
     case3[
         [
             "warehouse_id",
@@ -177,7 +183,10 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case5["late_delivery_risk_score"] = (0.30 * dist + 0.25 * util + 0.25 * peak + 0.15 * cv + 0.05 * noise).clip(0, 1)
     case5["on_time_delivery_rate"] = (0.98 - 0.35 * case5["late_delivery_risk_score"] + rng.normal(0, 0.02, len(case5))).clip(0.75, 0.99)
     case5["risk_level"] = pd.cut(case5["late_delivery_risk_score"], bins=[-1, 0.35, 0.6, 2], labels=["Low", "Medium", "High"])
-    case5["business_action"] = "고위험 권역 임시 차량 배치 및 권역 재조정"
+    case5["business_action"] = case5.apply(
+        lambda r: f"{r['region_name']} SLA risk={r['late_delivery_risk_score']:.2f}, on-time={r['on_time_delivery_rate']:.2f}. 임시 차량/권역 재조정 필요",
+        axis=1,
+    )
     case5[
         [
             "region_name",
@@ -242,8 +251,14 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case8["mfc_score"] = case8.get("score", 0) * 0.95
     case8["peak_ratio"] = 1.2
     case8["volatility"] = 0.16
-    case8["recommendation_reason"] = case8.get("reason", "")
-    case8["business_action"] = "상위 후보지 설치 타당성 검토"
+    case8["recommendation_reason"] = case8.apply(
+        lambda r: f"{r['region_name']}은 forecast_volume={r.get('forecast_volume', 0):.0f}, peak_ratio=1.20, nearest_hub_distance={r.get('nearest_hub_distance_km', 0):.1f}km로 후보 우선순위가 높음",
+        axis=1,
+    )
+    case8["business_action"] = case8.apply(
+        lambda r: f"{r['region_name']} 후보지는 임대비/접근성/기존거점 중복 검토 후 현장 실사 shortlist에 포함",
+        axis=1,
+    )
     case8[
         [
             "region_name",
