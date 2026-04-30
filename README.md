@@ -101,6 +101,16 @@ pip install -r requirements.txt
 python scripts/run_pipeline.py
 ```
 
+선택: OpenAI 기반 Executive Summary를 함께 생성하려면
+```bash
+export OPENAI_API_KEY=sk-...   # 따옴표 없이 권장
+python scripts/run_pipeline.py
+```
+> `.env`에 키를 넣는 경우 `OPENAI_API_KEY=sk-...` 형태를 권장합니다.  
+> `OPENAI_API_KEY="sk-..."`처럼 따옴표가 있어도 코드에서 자동 정규화합니다.
+> 429(RPM) 방지를 위해 OpenAI 요청은 기본 최소 4초 간격으로 제한됩니다.  
+> 파이프라인에서는 `OPENAI_MIN_INTERVAL_SEC` 환경변수로 간격을 조정할 수 있습니다.
+
 ### 6-3. 테스트 실행
 ```bash
 pytest -q

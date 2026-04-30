@@ -57,6 +57,20 @@ def _safe_stage(stage_name: str, fn, *args, **kwargs):
         return None
 
 
+def _require_stage(stage_name: str, result, required_paths: list[Path] | None = None) -> None:
+    if result is None:
+        raise RuntimeError(
+            f"Stage '{stage_name}' failed. Check prior [WARN] logs and rerun after fixing the root cause."
+        )
+    if required_paths:
+        missing = [str(path) for path in required_paths if not path.exists()]
+        if missing:
+            raise RuntimeError(
+                f"Stage '{stage_name}' completed but required outputs are missing: {', '.join(missing)}. "
+                "Check stage implementation and output paths."
+            )
+
+
 def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     out = paths.outputs / "analysis_cases"
     out.mkdir(parents=True, exist_ok=True)
@@ -93,6 +107,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
         lambda r: f"{r['region_name']}-{r['product_category']}은 P95 {r['p95_order_to_release_hours']:.1f}h로 지연 tail이 큽니다. OMS cut-off 1시간 조정 및 wave 증설 필요",
         axis=1,
     )
+    case1["metric_source"] = "simulation+rule_based"
     case1.to_csv(out / "01_oms_order_flow.csv", index=False, encoding="utf-8-sig")
 
     case2 = case1.groupby(["region_name", "product_category"], as_index=False)["order_count"].sum()
@@ -102,6 +117,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case2["risk_score"] = case2["peak_order_ratio"]
     case2["risk_level"] = pd.cut(case2["risk_score"], bins=[0, 1.1, 1.3, 99], labels=["Low", "Medium", "High"])
     case2["business_action"] = "피크 대응 안전재고 확대"
+    case2["metric_source"] = "simulation+rule_based"
     case2.to_csv(out / "02_oms_peak_order_risk.csv", index=False, encoding="utf-8-sig")
 
     case3 = inventory.head(300).copy()
@@ -126,6 +142,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
         lambda r: f"{r['region_name']}-{r['product_category']} stockout_risk={r['stockout_risk_score']:.2f}. 안전재고 상향 및 reorder 우선 적용",
         axis=1,
     )
+    case3["metric_source"] = "simulation+rule_based"
     case3[
         [
             "warehouse_id",
@@ -138,6 +155,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
             "stockout_risk_score",
             "reorder_priority",
             "business_action",
+            "metric_source",
         ]
     ].to_csv(out / "03_wms_inventory_risk.csv", index=False, encoding="utf-8-sig")
 
@@ -153,6 +171,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case4["warehouse_utilization"] = (case4["expected_pick_units"] / case4["warehouse_capacity_units"]).clip(0, 1.15)
     case4["workload_risk_level"] = pd.cut(case4["warehouse_utilization"], bins=[-1, 0.5, 0.8, 99], labels=["Low", "Medium", "High"])
     case4["business_action"] = "고부하 시간대 인력 재배치"
+    case4["metric_source"] = "simulation+rule_based"
     case4[
         [
             "warehouse_id",
@@ -166,6 +185,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
             "warehouse_utilization",
             "workload_risk_level",
             "business_action",
+            "metric_source",
         ]
     ].to_csv(out / "04_wms_picking_workload.csv", index=False, encoding="utf-8-sig")
 
@@ -187,6 +207,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
         lambda r: f"{r['region_name']} SLA risk={r['late_delivery_risk_score']:.2f}, on-time={r['on_time_delivery_rate']:.2f}. 임시 차량/권역 재조정 필요",
         axis=1,
     )
+    case5["metric_source"] = "simulation+rule_based"
     case5[
         [
             "region_name",
@@ -198,6 +219,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
             "late_delivery_risk_score",
             "risk_level",
             "business_action",
+            "metric_source",
         ]
     ].to_csv(out / "05_tms_delivery_sla.csv", index=False, encoding="utf-8-sig")
 
@@ -209,6 +231,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     case6["distance_saving_km"] = case6["baseline_distance_km"] - case6["optimized_distance_km"]
     case6["distance_saving_rate"] = case6["distance_saving_km"] / case6["baseline_distance_km"].replace(0, 1)
     case6["business_action"] = "경로 재편으로 이동거리 절감"
+    case6["metric_source"] = "optimization_output+rule_based"
     if "stops" not in case6.columns and {"vehicle_id", "stop_sequence"}.issubset(case6.columns):
         stop_counts = case6.groupby("vehicle_id")["stop_sequence"].max()
         case6["stops"] = case6["vehicle_id"].map(stop_counts).fillna(1).astype(int)
@@ -229,6 +252,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
             "distance_saving_km",
             "distance_saving_rate",
             "business_action",
+            "metric_source",
         ]
     ].to_csv(out / "06_tms_route_optimization.csv", index=False, encoding="utf-8-sig")
 
@@ -238,11 +262,12 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
     fm["peak_season_wape"] = fm.get("wape", fm.get("WAPE", 0)) * 1.1
     fm["forecast_risk_level"] = "Medium"
     fm["business_action"] = "고오차 구간 예측보정"
+    fm["metric_source"] = "forecasting_output+rule_based"
     rename_cols = {"wape": "wape", "smape": "smape", "mae": "mae", "rmse": "rmse", "model": "model"}
     for k, v in rename_cols.items():
         if k not in fm.columns:
             fm[k] = np.nan
-    fm[["region_name", "product_category", "model", "wape", "smape", "mae", "rmse", "peak_season_wape", "forecast_risk_level", "business_action"]].to_csv(
+    fm[["region_name", "product_category", "model", "wape", "smape", "mae", "rmse", "peak_season_wape", "forecast_risk_level", "business_action", "metric_source"]].to_csv(
         out / "07_demand_forecasting_region_category.csv", index=False, encoding="utf-8-sig"
     )
 
@@ -259,6 +284,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
         lambda r: f"{r['region_name']} 후보지는 임대비/접근성/기존거점 중복 검토 후 현장 실사 shortlist에 포함",
         axis=1,
     )
+    case8["metric_source"] = "recommender_output+rule_based"
     case8[
         [
             "region_name",
@@ -271,6 +297,7 @@ def _generate_analysis_case_outputs(paths) -> dict[str, Path]:
             "nearest_hub_distance_km",
             "recommendation_reason",
             "business_action",
+            "metric_source",
         ]
     ].to_csv(out / "08_locker_site_recommendation.csv", index=False, encoding="utf-8-sig")
 
@@ -601,7 +628,15 @@ def main() -> None:
     _debug_csv_rows(paths.outputs / "ops_simulation" / "delivery_events.csv", "ops.delivery_events")
 
     print("[8/15] Generating analysis case outputs...")
-    _safe_stage("analysis_cases", _generate_analysis_case_outputs, paths)
+    analysis_case_out = _safe_stage("analysis_cases", _generate_analysis_case_outputs, paths)
+    _require_stage(
+        "analysis_cases",
+        analysis_case_out,
+        [
+            paths.outputs / "analysis_cases" / "01_oms_order_flow.csv",
+            paths.outputs / "analysis_cases" / "08_locker_site_recommendation.csv",
+        ],
+    )
     _debug_csv_rows(paths.outputs / "analysis_cases" / "01_oms_order_flow.csv", "analysis_cases.01_oms_order_flow")
     _debug_csv_rows(paths.outputs / "analysis_cases" / "07_demand_forecasting_region_category.csv", "analysis_cases.07_forecasting")
 
@@ -618,22 +653,47 @@ def main() -> None:
 
     aa_root = paths.outputs / "advanced_analytics"
     reg_out = _safe_stage("regression_analysis", run_regression_analysis, feat_df, aa_root / "regression")
+    _require_stage(
+        "regression_analysis",
+        reg_out,
+        [aa_root / "regression" / "regression_model_metrics.csv"],
+    )
     if reg_out:
         _debug_csv_rows(Path(reg_out.get("metrics", "")), "advanced_analytics.regression.metrics")
     print("[10/15] Running classification analysis...")
     cls_out = _safe_stage("classification_analysis", run_classification_analysis, feat_df, aa_root / "classification")
+    _require_stage(
+        "classification_analysis",
+        cls_out,
+        [aa_root / "classification" / "classification_model_metrics.csv"],
+    )
     if cls_out:
         _debug_csv_rows(Path(cls_out.get("metrics", "")), "advanced_analytics.classification.metrics")
     print("[11/15] Running statistical tests...")
     stat_out = _safe_stage("statistical_tests", run_statistical_tests, feat_df, aa_root / "statistics")
+    _require_stage(
+        "statistical_tests",
+        stat_out,
+        [aa_root / "statistics" / "statistical_tests.csv"],
+    )
     if stat_out:
         _debug_csv_rows(Path(stat_out.get("tests", "")), "advanced_analytics.statistics.tests")
     print("[12/15] Running time series analysis...")
     ts_out = _safe_stage("time_series_analysis", run_time_series_analysis, feat_df, aa_root / "time_series")
+    _require_stage(
+        "time_series_analysis",
+        ts_out,
+        [aa_root / "time_series" / "decomposition.csv"],
+    )
     if ts_out:
         _debug_csv_rows(Path(ts_out.get("decomposition", "")), "advanced_analytics.time_series.decomposition")
     print("[13/15] Running clustering analysis...")
     cl_out = _safe_stage("clustering_analysis", run_clustering_analysis, feat_df, aa_root / "clustering")
+    _require_stage(
+        "clustering_analysis",
+        cl_out,
+        [aa_root / "clustering" / "cluster_assignments.csv"],
+    )
     if cl_out:
         _debug_csv_rows(Path(cl_out.get("assignments", "")), "advanced_analytics.clustering.assignments")
     print("[14/15] Generating optimization formulation...")
@@ -648,9 +708,49 @@ def main() -> None:
         pd.read_csv(paths.outputs / "scm" / "region_volatility.csv"),
         aa_root / "qubo",
     )
+    _require_stage(
+        "qubo_extended",
+        qubo_ext,
+        [aa_root / "qubo" / "qubo_solution_extended.csv"],
+    )
     if qubo_ext:
         _debug_csv_rows(Path(qubo_ext.get("solution", "")), "advanced_analytics.qubo.solution")
         _debug_csv_rows(Path(qubo_ext.get("matrix", "")), "advanced_analytics.qubo.matrix")
+
+    print("[16/16] Generating executive insights...")
+    insights_dir = paths.outputs / "insights"
+    actions_path = _safe_stage(
+        "business_actions",
+        generate_business_actions,
+        insights_dir,
+        pd.read_csv(paths.outputs / "forecasting" / "model_metrics.csv"),
+        pd.read_csv(paths.outputs / "recommender" / "site_recommendations.csv"),
+        pd.read_csv(paths.outputs / "analysis_cases" / "05_tms_delivery_sla.csv"),
+        pd.read_csv(paths.outputs / "analysis_cases" / "03_wms_inventory_risk.csv"),
+        pd.read_csv(paths.outputs / "analysis_cases" / "01_oms_order_flow.csv"),
+        pd.read_csv(paths.outputs / "analysis_cases" / "06_tms_route_optimization.csv"),
+        pd.read_csv(paths.outputs / "optimization" / "qubo_solution.csv"),
+    )
+    _require_stage(
+        "business_actions",
+        actions_path,
+        [insights_dir / "business_action_recommendations.csv"],
+    )
+    actions_df = pd.read_csv(insights_dir / "business_action_recommendations.csv")
+    priority_path = _safe_stage("action_priority_matrix", build_action_priority_matrix, actions_df, insights_dir)
+    _require_stage(
+        "action_priority_matrix",
+        priority_path,
+        [insights_dir / "action_priority_matrix.csv"],
+    )
+    summary_path = _safe_stage("executive_summary", generate_executive_summary, actions_df, insights_dir)
+    _require_stage(
+        "executive_summary",
+        summary_path,
+        [insights_dir / "executive_summary.md"],
+    )
+    _debug_csv_rows(insights_dir / "business_action_recommendations.csv", "insights.actions")
+    _debug_csv_rows(insights_dir / "action_priority_matrix.csv", "insights.priority")
 
     print("\nDone. Review outputs/ and docs/ for portfolio artifacts.")
 
