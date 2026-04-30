@@ -6,6 +6,7 @@ import time
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = ROOT / "outputs"
@@ -17,7 +18,12 @@ st.caption("Made by 한정연(Jaiden Han)")
 
 
 def generate_llm_insight(context: str) -> str | None:
-    api_key = st.secrets.get("OPENAI_API_KEY", None) or __import__("os").getenv("OPENAI_API_KEY")
+    api_key = None
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", None)
+    except StreamlitSecretNotFoundError:
+        api_key = None
+    api_key = api_key or __import__("os").getenv("OPENAI_API_KEY")
     if not api_key:
         return None
     min_interval_sec = 4.0
