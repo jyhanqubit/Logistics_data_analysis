@@ -130,14 +130,18 @@ def solve_cvrp_greedy(db_path: Path, recommendations_path: Path, output_dir: Pat
     return route_plan
 
 
-def build_facility_qubo(db_path: Path, k: int = 2, penalty: float = 1000.0) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_facility_qubo(db_path: Path, k: int = 2, penalty: float | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build a small QUBO for selecting k hubs from candidates.
 
     Objective sketch:
         minimize -benefit_i * x_i + penalty * (sum_i x_i - k)^2
 
-    benefit_i approximates demand coverage around each candidate hub.
-    This is quantum-ready: QUBO matrix can be sent to QAOA/annealing solvers.
+    penalty 크기 결정: 제약 위반이 절대 이득이 되지 않아야 한다. 개수를 k에서
+    1개 어겨서 얻는 목적함수 이득은 최대 max_i |benefit_i|이고, 그때 penalty 항은
+    최소 penalty * 1 증가한다. 따라서 penalty > max|benefit|이면 충분하며,
+    수치 여유를 두어 penalty = 2 * max|benefit| + 1로 잡는다. 임의 상수(예: 1000)로
+    두면 benefit 스케일이 바뀔 때 제약이 깨지거나(작을 때) 에너지 지형이 penalty에
+    짓눌려 solver가 benefit 차이를 못 보게(클 때) 된다.
     """
     hubs = query_df(db_path, "SELECT hub_id, hub_name, lat, lon, capacity_daily, fixed_cost_score FROM dim_hub_candidate")
     demand = query_df(db_path, """
@@ -156,6 +160,9 @@ def build_facility_qubo(db_path: Path, k: int = 2, penalty: float = 1000.0) -> t
         benefits.append(benefit)
     hubs = hubs.copy()
     hubs["benefit"] = benefits
+
+    if penalty is None:
+        penalty = 2.0 * float(np.max(np.abs(hubs["benefit"]))) + 1.0
 
     n = len(hubs)
     q = np.zeros((n, n), dtype=float)
@@ -193,14 +200,29 @@ def run_qubo_experiment(db_path: Path, output_dir: Path, k: int = 2) -> pd.DataF
     hubs.to_csv(output_dir / "qubo_hub_benefits.csv", index=False, encoding="utf-8-sig")
     solutions.to_csv(output_dir / "qubo_solution.csv", index=False, encoding="utf-8-sig")
     best = solutions.iloc[0]
+
+    # penalty 검증: 에너지 하위 해들이 실제로 개수 제약을 지키는지 확인
+    n_feasible = int((solutions["selected_count"] == k).sum())
+    top_feasible = bool((solutions.head(n_feasible)["selected_count"] == k).all())
+    penalty_used = 2.0 * float(np.max(np.abs(hubs["benefit"]))) + 1.0
+
+    # 고전 최적해(brute force로 제약 만족 해 중 benefit 최대)와 QUBO 최적해 일치 확인
+    feasible = solutions[solutions["selected_count"] == k]
+    qubo_matches_classical = bool(best["bits"] == feasible.iloc[0]["bits"])
+
     summary = f"""
 # QUBO 기반 거점 선택 실험
 
 - 문제: 후보 허브 중 **{k}개** 선택
 - 목적: 수요 커버리지 benefit 최대화 + 선택 개수 제약 penalty
+- Penalty: **{penalty_used:.3f}** = 2 x max|benefit| + 1 (제약 위반 이득의 상계에서 유도)
 - Best bitstring: `{best['bits']}`
 - 선택 허브: **{best['selected_hubs']}**
 - Energy: **{float(best['energy']):.3f}**
+
+## 검증
+- 에너지 상위 {n_feasible}개 해가 전부 개수 제약(={k}) 만족: **{top_feasible}**
+- QUBO 최적해 = 제약 만족 해 중 benefit 최대 해: **{qubo_matches_classical}**
 
 이 QUBO 행렬은 QAOA 또는 quantum annealing solver에 입력할 수 있는 quantum-ready formulation입니다. 현재 PoC는 외부 양자 SDK 없이 재현 가능하도록 brute force로 작은 문제를 검증합니다.
 """.lstrip()

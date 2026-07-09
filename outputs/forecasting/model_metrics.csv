@@ -1,3 +1,4 @@
-﻿model,mae,rmse,wape,smape
-seasonal_naive_lag7,16.2149,21.7176,0.0755,0.093
-gradient_boosting,13.9292,18.744,0.0648,0.0788
+﻿model,wape
+seasonal_naive,0.1047
+gradient_boosting_recursive,0.1168
+operational_blend_switch14,0.0955
